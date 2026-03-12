@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="action_hsta_calculator" model="ir.actions.act_url">
+        <field name="name">Financing Calculator</field>
+        <field name="url">/hsta_calculator/static/src/calculator.html</field>
+        <field name="target">new</field>
+    </record>
+
+    <menuitem id="menu_hsta_calculator"
+        name="Financing Calculator"
+        action="action_hsta_calculator"
+        sequence="100"/>
+</odoo>

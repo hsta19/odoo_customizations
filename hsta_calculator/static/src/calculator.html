@@ -1,0 +1,688 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Odoo Financing Calculator</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,300;9..40,400;9..40,500;9..40,600;9..40,700&family=DM+Mono:wght@400;500;600&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+:root{
+  --odoo:#714B67;--odoo-l:#9C6B8E;--odoo-d:#4F3349;--odoo-bg:#F5EFF4;
+  --warn:#E06B4D;--warn-l:#FCE8E2;
+  --green:#1E8A5E;
+  --text:#1C1B2E;--muted:#6B6B8A;--border:#E0D5DE;
+  --card:#fff;--bg:#F6F3F7;
+  --sh:0 1px 4px rgba(113,75,103,.07),0 4px 16px rgba(113,75,103,.06);
+  --sh-lg:0 8px 40px rgba(113,75,103,.15);
+  --r:14px;--rs:9px;
+  --tr:all .18s cubic-bezier(.4,0,.2,1);
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);min-height:100vh;-webkit-font-smoothing:antialiased}
+
+.hdr{background:linear-gradient(135deg,var(--odoo-d) 0%,var(--odoo) 55%,var(--odoo-l) 100%);padding:24px 36px;display:flex;align-items:center;gap:16px;box-shadow:0 4px 28px rgba(79,51,73,.28)}
+.hdr-logo{width:42px;height:42px;background:#fff;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:20px;box-shadow:0 2px 8px rgba(0,0,0,.18);flex-shrink:0}
+.hdr h1{font-size:20px;font-weight:700;color:#fff;letter-spacing:-.3px}
+.hdr p{font-size:12px;color:rgba(255,255,255,.65);margin-top:2px}
+.hdr-badge{margin-left:auto;background:rgba(255,255,255,.14);border:1px solid rgba(255,255,255,.22);color:#fff;font-size:10px;font-weight:700;padding:4px 12px;border-radius:20px;letter-spacing:.6px;text-transform:uppercase;white-space:nowrap}
+
+.main{max-width:1180px;margin:0 auto;padding:28px 20px 64px;display:grid;grid-template-columns:1fr 1fr;gap:18px}
+.fw{grid-column:1/-1}
+
+.card{background:var(--card);border-radius:var(--r);border:1px solid var(--border);box-shadow:var(--sh);overflow:hidden}
+.ch{background:var(--odoo-bg);border-bottom:1px solid var(--border);padding:13px 18px;display:flex;align-items:center;gap:10px}
+.ch-ic{width:26px;height:26px;background:var(--odoo);border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:13px;color:#fff;flex-shrink:0}
+.ch h2{font-size:13px;font-weight:700;color:var(--odoo-d);letter-spacing:-.1px}
+.bdg{margin-left:auto;font-size:9px;font-weight:700;padding:3px 8px;border-radius:10px;text-transform:uppercase;letter-spacing:.4px}
+.bdg-r{background:var(--odoo-bg);color:var(--odoo);border:1px solid rgba(113,75,103,.2)}
+.bdg-nr{background:var(--warn-l);color:var(--warn);border:1px solid rgba(224,107,77,.2)}
+.cb{padding:18px}
+
+.fl{display:flex;flex-direction:column;gap:5px;margin-bottom:14px}
+.fl:last-child{margin-bottom:0}
+.fl>label{font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.6px}
+.g2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+
+input[type=number],input[type=text]{font-family:'DM Sans',sans-serif;font-size:14px;font-weight:500;color:var(--text);background:var(--bg);border:1.5px solid var(--border);border-radius:var(--rs);padding:9px 12px;width:100%;outline:none;transition:var(--tr);-webkit-appearance:none}
+input:focus{border-color:var(--odoo);box-shadow:0 0 0 3px rgba(113,75,103,.1);background:#fff}
+
+.seg{display:flex;background:var(--bg);border:1.5px solid var(--border);border-radius:var(--rs);overflow:hidden;height:40px}
+.seg button{flex:1;border:none;background:transparent;font-family:'DM Sans',sans-serif;font-size:13px;font-weight:600;color:var(--muted);cursor:pointer;transition:var(--tr);padding:0 8px}
+.seg button.on{background:var(--odoo);color:#fff;border-radius:calc(var(--rs) - 2px);margin:2px;box-shadow:0 2px 8px rgba(113,75,103,.28)}
+.seg button:not(.on):hover{color:var(--odoo);background:var(--odoo-bg)}
+
+.yr-sel{display:flex;gap:6px}
+.yr-btn{flex:1;height:46px;border:1.5px solid var(--border);border-radius:var(--rs);background:var(--bg);font-family:'DM Sans',sans-serif;cursor:pointer;transition:var(--tr);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px}
+.yr-btn .yl{font-size:13px;font-weight:700;color:var(--muted);transition:var(--tr)}
+.yr-btn .yc{font-size:9px;color:transparent;transition:var(--tr)}
+.yr-btn.on{background:var(--odoo);border-color:var(--odoo);box-shadow:0 2px 10px rgba(113,75,103,.3)}
+.yr-btn.on .yl{color:#fff}
+.yr-btn.on .yc{color:rgba(255,255,255,.7)}
+.yr-btn:not(.on):hover{border-color:var(--odoo);background:var(--odoo-bg)}
+.yr-btn:not(.on):hover .yl{color:var(--odoo)}
+
+.sp{display:flex;align-items:center;border:1.5px solid var(--border);border-radius:var(--rs);overflow:hidden;background:var(--bg);transition:var(--tr)}
+.sp:focus-within{border-color:var(--odoo);box-shadow:0 0 0 3px rgba(113,75,103,.1);background:#fff}
+.sp input{border:none;background:transparent;text-align:center;flex:1;min-width:0;outline:none}
+.sp input:focus{box-shadow:none;background:transparent}
+.sb{width:34px;flex-shrink:0;border:none;background:transparent;color:var(--muted);cursor:pointer;display:flex;align-items:center;justify-content:center;transition:var(--tr);font-family:monospace;align-self:stretch}
+.sb:hover{background:var(--odoo-bg);color:var(--odoo)}
+.sb:active{background:var(--odoo);color:#fff}
+
+/* Big discount spinners */
+.disc-block{display:flex;align-items:center;justify-content:space-between;padding:12px 0;gap:12px}
+.disc-block+.disc-block{border-top:1px solid var(--bg)}
+.disc-info .di-t{font-size:14px;font-weight:600;color:var(--text)}
+.disc-info .di-s{font-size:11px;color:var(--muted);margin-top:2px}
+.disc-right{display:flex;align-items:center;gap:8px;flex-shrink:0}
+.disc-sp{display:flex;align-items:center;border:2px solid var(--border);border-radius:var(--rs);overflow:hidden;background:var(--bg);height:52px;min-width:150px;transition:var(--tr)}
+.disc-sp:focus-within{border-color:var(--odoo);box-shadow:0 0 0 3px rgba(113,75,103,.12);background:#fff}
+.disc-sp.wf:focus-within{border-color:var(--warn);box-shadow:0 0 0 3px rgba(224,107,77,.12)}
+.disc-sp input{border:none;background:transparent;text-align:center;flex:1;min-width:0;outline:none;font-size:26px;font-weight:800;font-family:'DM Mono',monospace;padding:0 4px}
+.disc-sp input:focus{box-shadow:none;background:transparent}
+.disc-sp input.co{color:var(--odoo)}
+.disc-sp input.cw{color:var(--warn)}
+.disc-sp .sb{width:38px;font-size:20px}
+.disc-pct{font-size:22px;font-weight:800;font-family:'DM Mono',monospace}
+.disc-pct.co{color:var(--odoo)}
+.disc-pct.cw{color:var(--warn)}
+
+/* Per-contract discount panel */
+.pcd-wrap{display:none}
+.pcd-wrap.vis{display:block}
+.pcd-lbl{font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.6px;margin-bottom:10px}
+.pcd-grid{display:grid;gap:10px}
+.pcd-row{background:var(--bg);border-radius:var(--rs);border:1px solid var(--border);padding:12px 14px}
+.pcd-rt{font-size:12px;font-weight:700;color:var(--odoo-d);margin-bottom:10px;display:flex;align-items:center;gap:6px}
+.yr-pill{background:var(--odoo);color:#fff;font-size:10px;font-weight:700;padding:2px 8px;border-radius:10px}
+.pcd-fields{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.pcd-fields label{font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;display:block;margin-bottom:5px}
+.pcd-sp{display:flex;align-items:center;border:1.5px solid var(--border);border-radius:var(--rs);overflow:hidden;background:#fff;height:44px;transition:var(--tr)}
+.pcd-sp:focus-within{border-color:var(--odoo);box-shadow:0 0 0 3px rgba(113,75,103,.1)}
+.pcd-sp input{border:none;background:transparent;text-align:center;flex:1;min-width:0;outline:none;font-size:18px;font-weight:800;font-family:'DM Mono',monospace}
+.pcd-sp input:focus{box-shadow:none;background:transparent}
+.pcd-sp input.co{color:var(--odoo)}
+.pcd-sp input.cw{color:var(--warn)}
+.pcd-sp .sb{width:30px;font-size:16px}
+.pcd-pct{font-size:14px;font-weight:700;margin-left:4px}
+.pcd-pct.co{color:var(--odoo)}
+.pcd-pct.cw{color:var(--warn)}
+
+/* Reminder pills */
+.rem-wrap{margin-top:10px;display:flex;flex-direction:column;gap:5px}
+.rem-pill{font-size:11px;font-weight:500;padding:6px 10px;border-radius:6px;background:var(--odoo-bg);color:var(--odoo);border:1px solid rgba(113,75,103,.15);line-height:1.4}
+
+/* License table */
+.lt{width:100%;border-collapse:collapse;margin-top:4px}
+.lt th{font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;text-align:left;padding:0 0 8px;border-bottom:1px solid var(--border)}
+.lt th:not(:first-child){text-align:right}
+.lt td{padding:8px 0;border-bottom:1px solid var(--bg);font-size:13px;vertical-align:middle}
+.lt td:first-child{font-weight:600;color:var(--muted);font-size:12px;text-transform:uppercase;letter-spacing:.3px}
+.lt td:not(:first-child){text-align:right;font-family:'DM Mono',monospace;font-weight:500}
+.lt tr.tot td{border-top:2px solid var(--border);border-bottom:none;padding-top:10px;font-weight:700;font-size:14px}
+.lt tr.tot td:first-child{color:var(--odoo-d)}
+.lt tr.tot td:not(:first-child){color:var(--odoo)}
+.lt tr.dim td{opacity:.28}
+.rc{color:var(--muted);font-size:12px}
+
+/* SH table */
+.sht{width:100%;border-collapse:collapse}
+.sht th{font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;text-align:left;padding:0 0 8px;border-bottom:1px solid var(--border)}
+.sht th:not(:first-child){text-align:right}
+.sht td{padding:10px 0;border-bottom:1px solid var(--bg);font-size:13px;vertical-align:middle}
+.sht td:first-child{font-weight:500;width:36%}
+.sht td.rt{text-align:right;color:var(--muted);font-size:12px;font-family:'DM Mono',monospace}
+.sht td.ic{text-align:right;width:130px}
+.sht .sp{height:34px}
+.sht .sb{width:28px;font-size:14px}
+.sht .sp input{font-size:13px;padding:6px 4px}
+
+/* Impl */
+.ig{display:grid;grid-template-columns:repeat(5,1fr);gap:7px;margin-bottom:12px}
+.io input[type=radio]{display:none}
+.il{display:block;padding:10px 6px;border:1.5px solid var(--border);border-radius:var(--rs);background:var(--bg);transition:var(--tr);cursor:pointer;text-align:center}
+.io input:checked+.il{border-color:var(--warn);background:var(--warn-l);box-shadow:0 0 0 3px rgba(224,107,77,.1)}
+.il .ih{font-size:13px;font-weight:700;color:var(--text)}
+.il .ip{font-size:11px;color:var(--muted);font-family:'DM Mono',monospace;margin-top:2px}
+.io input:checked+.il .ih,.io input:checked+.il .ip{color:var(--warn)}
+.mr{display:flex;align-items:center;gap:10px;margin-top:12px;padding-top:12px;border-top:1px solid var(--border)}
+.mr label{font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;white-space:nowrap}
+
+/* APR */
+.tc{padding:5px 13px;border:1.5px solid var(--border);border-radius:20px;background:var(--bg);font-family:'DM Sans',sans-serif;font-size:12px;font-weight:600;color:var(--muted);cursor:pointer;transition:var(--tr)}
+.tc.on{background:var(--odoo);color:#fff;border-color:var(--odoo);box-shadow:0 2px 6px rgba(113,75,103,.25)}
+.tc:not(.on):hover{border-color:var(--odoo);color:var(--odoo)}
+
+/* Misc */
+.stag{display:inline-flex;align-items:center;gap:4px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;padding:3px 8px;border-radius:4px;margin-bottom:11px}
+.sr{background:var(--odoo-bg);color:var(--odoo)}
+.snr{background:var(--warn-l);color:var(--warn)}
+.div{height:1px;background:var(--border);margin:14px 0}
+.ctag{font-size:10px;font-family:'DM Mono',monospace;font-weight:700;background:var(--odoo);color:#fff;padding:2px 7px;border-radius:4px;margin-left:6px}
+
+/* Summary comparison table */
+.ct{width:100%;border-collapse:collapse;margin-bottom:22px}
+.ct th{font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;padding:0 14px 10px;border-bottom:2px solid var(--border);text-align:right;white-space:nowrap}
+.ct th:first-child{text-align:left;padding-left:0;min-width:140px}
+.ct th.yh{color:var(--odoo);border-bottom-color:var(--odoo);min-width:120px}
+.ct td{padding:9px 14px;border-bottom:1px solid var(--bg);font-size:13px;vertical-align:middle;text-align:right;font-family:'DM Mono',monospace;font-weight:500}
+.ct td:first-child{text-align:left;font-family:'DM Sans',sans-serif;font-weight:600;color:var(--muted);font-size:12px;text-transform:uppercase;letter-spacing:.3px;padding-left:0}
+.ct tr.rh td{background:var(--odoo-bg)}
+.ct tr.rh td:first-child{color:var(--odoo-d)}
+.ct tr.rh td:not(:first-child){color:var(--odoo);font-size:15px;font-weight:700}
+.ct tr.rs td:not(:first-child){color:var(--green)}
+.ct tr.rk td:not(:first-child){color:var(--warn)}
+.ct .na{opacity:.28;font-style:italic;font-family:'DM Sans',sans-serif}
+
+/* Client summary cards */
+.cc-grid{display:grid;gap:16px}
+.cc{background:linear-gradient(150deg,#3D2236 0%,var(--odoo-d) 35%,var(--odoo) 100%);border-radius:16px;padding:22px 24px 20px;color:#fff;box-shadow:0 12px 48px rgba(79,51,73,.28);position:relative;overflow:hidden;font-family:'Inter',sans-serif}
+.cc::before{content:'';position:absolute;top:-50px;right:-50px;width:180px;height:180px;background:rgba(255,255,255,.04);border-radius:50%;pointer-events:none}
+.cc::after{content:'';position:absolute;bottom:-60px;left:-30px;width:200px;height:200px;background:rgba(255,255,255,.025);border-radius:50%;pointer-events:none}
+/* Card header row */
+.cc-hdr{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:16px;gap:10px}
+.cc-ttl{font-size:11px;font-weight:600;opacity:.55;text-transform:uppercase;letter-spacing:.6px;line-height:1.5}
+/* Term selector chips inside card */
+.cc-terms{display:flex;gap:5px;flex-wrap:wrap;justify-content:flex-end}
+.cct{padding:4px 10px;border-radius:20px;border:1px solid rgba(255,255,255,.25);background:transparent;color:rgba(255,255,255,.55);font-family:'Inter',sans-serif;font-size:11px;font-weight:600;cursor:pointer;transition:all .15s;white-space:nowrap}
+.cct.on{background:rgba(255,255,255,.18);border-color:rgba(255,255,255,.55);color:#fff}
+.cct:hover:not(.on){background:rgba(255,255,255,.08);color:rgba(255,255,255,.8)}
+.cct.disabled{opacity:.25;pointer-events:none}
+/* Hero number */
+.cc-hero{margin-bottom:18px}
+.cc-hero .h-lbl{font-size:10px;font-weight:600;opacity:.5;text-transform:uppercase;letter-spacing:.6px;margin-bottom:4px}
+.cc-hero .h-val{font-size:36px;font-weight:800;letter-spacing:-1.5px;line-height:1;color:#fff}
+.cc-hero .h-sub{font-size:12px;opacity:.5;margin-top:5px;font-weight:500}
+/* Secondary stats row */
+.cc-stats{display:flex;gap:0;margin-bottom:18px;background:rgba(0,0,0,.15);border-radius:10px;overflow:hidden}
+.cc-stat{flex:1;padding:10px 14px;border-right:1px solid rgba(255,255,255,.07)}
+.cc-stat:last-child{border-right:none}
+.cc-stat .st-l{font-size:9px;font-weight:700;opacity:.45;text-transform:uppercase;letter-spacing:.5px;margin-bottom:3px}
+.cc-stat .st-v{font-size:15px;font-weight:700;letter-spacing:-.3px}
+/* Footer breakdown */
+.cc-ft{border-top:1px solid rgba(255,255,255,.1);padding-top:14px;display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:10px}
+.cf{padding:8px 10px;background:rgba(0,0,0,.12);border-radius:8px}
+.cf .cf-l{font-size:9px;font-weight:700;opacity:.45;text-transform:uppercase;letter-spacing:.5px;margin-bottom:3px}
+.cf .cf-v{font-size:13px;font-weight:700;letter-spacing:-.2px}
+.cf-v.grn{color:#6EEAA0}
+.cf-v.y1hl{color:#FFD97A}
+/* 1-yr savings badge */
+.y1-badge{display:inline-flex;align-items:center;gap:4px;background:rgba(255,217,122,.15);border:1px solid rgba(255,217,122,.3);color:#FFD97A;font-size:10px;font-weight:700;padding:3px 8px;border-radius:6px;margin-top:6px}
+
+.sl{font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.6px;margin-bottom:12px}
+
+@media(max-width:720px){
+  .main{grid-template-columns:1fr;padding:14px 12px 48px}
+  .fw{grid-column:auto}
+  .ig{grid-template-columns:repeat(3,1fr)}
+  .hdr{padding:18px 16px}.hdr-badge{display:none}
+  .pcd-fields{grid-template-columns:1fr}
+}
+</style>
+</head>
+<body>
+
+<div class="hdr">
+  <div class="hdr-logo">🟣</div>
+  <div>
+    <h1>Odoo Financing Calculator</h1>
+    <p>Recurring &amp; non-recurring costs with multi-contract comparison</p>
+  </div>
+  <div class="hdr-badge">Internal Tool</div>
+</div>
+
+<div class="main">
+
+<!-- CONFIG -->
+<div class="card">
+  <div class="ch"><div class="ch-ic">⚙️</div><h2>Quote Configuration</h2></div>
+  <div class="cb">
+    <div class="g2" style="margin-bottom:14px">
+      <div class="fl" style="margin-bottom:0">
+        <label>Currency</label>
+        <div class="seg">
+          <button id="btn-usd" class="on" onclick="setCur('USD')">🇺🇸 USD</button>
+          <button id="btn-cad" onclick="setCur('CAD')">🇨🇦 CAD</button>
+        </div>
+      </div>
+      <div class="fl" style="margin-bottom:0">
+        <label>Subscription Tier</label>
+        <div class="seg">
+          <button id="btn-std" class="on" onclick="setTier('standard')">Standard</button>
+          <button id="btn-cus" onclick="setTier('custom')">Custom</button>
+        </div>
+      </div>
+    </div>
+    <div class="fl">
+      <label>Contract Length <span style="font-weight:400;text-transform:none;letter-spacing:0;font-size:10px;color:var(--muted)">(tap multiple to compare)</span></label>
+      <div class="yr-sel">
+        <button class="yr-btn on" data-yr="1" onclick="toggleYr(1)"><span class="yl">1 Yr</span><span class="yc">✓</span></button>
+        <button class="yr-btn" data-yr="2" onclick="toggleYr(2)"><span class="yl">2 Yrs</span><span class="yc">✓</span></button>
+        <button class="yr-btn" data-yr="3" onclick="toggleYr(3)"><span class="yl">3 Yrs</span><span class="yc">✓</span></button>
+        <button class="yr-btn" data-yr="4" onclick="toggleYr(4)"><span class="yl">4 Yrs</span><span class="yc">✓</span></button>
+        <button class="yr-btn" data-yr="5" onclick="toggleYr(5)"><span class="yl">5 Yrs</span><span class="yc">✓</span></button>
+      </div>
+    </div>
+    <div class="fl" style="margin-bottom:0">
+      <label>Number of Users</label>
+      <div class="sp" style="height:40px">
+        <button class="sb" onclick="adjUsers(-1)">−</button>
+        <input type="number" id="user-count" value="10" min="1" oninput="calc()">
+        <button class="sb" onclick="adjUsers(1)">+</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- DISCOUNTS -->
+<div class="card">
+  <div class="ch"><div class="ch-ic">🏷️</div><h2>Discounts</h2></div>
+  <div class="cb">
+    <!-- Single contract mode -->
+    <div id="disc-single">
+      <div class="disc-block">
+        <div class="disc-info"><div class="di-t">Multi-Year Discount</div><div class="di-s">Applied to Recurring costs (Y2+ only)</div></div>
+        <div class="disc-right">
+          <div class="disc-sp">
+            <button class="sb" onclick="adjDisc('rec',-0.5)">−</button>
+            <input type="number" id="disc-rec" class="co" value="0" min="0" max="100" step="0.5" oninput="calc()">
+            <button class="sb" onclick="adjDisc('rec',0.5)">+</button>
+          </div>
+          <span class="disc-pct co">%</span>
+        </div>
+      </div>
+      <div id="rem-single" class="rem-wrap"></div>
+      <div class="div"></div>
+      <div class="disc-block">
+        <div class="disc-info"><div class="di-t">Implementation Discount</div><div class="di-s">Applied to Non-Recurring cost only</div></div>
+        <div class="disc-right">
+          <div class="disc-sp wf">
+            <button class="sb" onclick="adjDisc('impl',-0.5)">−</button>
+            <input type="number" id="disc-impl" class="cw" value="0" min="0" step="0.5" oninput="calc()">
+            <button class="sb" onclick="adjDisc('impl',0.5)">+</button>
+          </div>
+          <span class="disc-pct cw">%</span>
+        </div>
+      </div>
+    </div>
+    <!-- Multi contract mode -->
+    <div id="disc-multi" class="pcd-wrap">
+      <div class="pcd-lbl">Discounts per contract length</div>
+      <div class="pcd-grid" id="pcd-grid"></div>
+    </div>
+  </div>
+</div>
+
+<!-- LICENSE -->
+<div class="card fw">
+  <div class="ch"><div class="ch-ic">📄</div><h2>License Pricing</h2><span class="bdg bdg-r">Recurring</span></div>
+  <div class="cb">
+    <div class="stag sr">● Recurring Cost</div>
+    <div class="g2" style="margin-bottom:14px">
+      <div class="fl" style="margin-bottom:0"><label>Y1 Rate (per user / mo)</label><input type="text" id="lic-y1" readonly style="background:var(--odoo-bg);color:var(--odoo);font-weight:700;font-family:'DM Mono',monospace"></div>
+      <div class="fl" style="margin-bottom:0"><label>Y2+ Rate (per user / mo)</label><input type="text" id="lic-y2" readonly style="background:var(--odoo-bg);color:var(--odoo);font-weight:700;font-family:'DM Mono',monospace"></div>
+    </div>
+    <table class="lt"><thead><tr><th>Year</th><th>Rate / User / Mo</th><th>Monthly Total</th><th>Annual Total</th></tr></thead><tbody id="lic-body"></tbody></table>
+  </div>
+</div>
+
+<!-- ODOO.SH -->
+<div class="card fw">
+  <div class="ch"><div class="ch-ic">☁️</div><h2>Odoo.sh Hosting</h2><span class="bdg bdg-r">Recurring</span></div>
+  <div class="cb">
+    <div class="stag sr">● Recurring Cost</div>
+    <table class="sht">
+      <thead><tr><th>Resource</th><th>Rate</th><th style="text-align:right">Qty</th><th style="text-align:right">Monthly Total</th></tr></thead>
+      <tbody>
+        <tr><td>Workers</td><td class="rt" id="sh-wr">—</td><td class="ic"><div class="sp"><button class="sb" onclick="adjSH('w',-1)">−</button><input type="number" id="sh-w" value="0" min="0" oninput="calc()"><button class="sb" onclick="adjSH('w',1)">+</button></div></td><td class="rt" id="sh-wt">—</td></tr>
+        <tr><td>Storage (GB)</td><td class="rt" id="sh-sr">—</td><td class="ic"><div class="sp"><button class="sb" onclick="adjSH('s',-1)">−</button><input type="number" id="sh-s" value="0" min="0" oninput="calc()"><button class="sb" onclick="adjSH('s',1)">+</button></div></td><td class="rt" id="sh-st">—</td></tr>
+        <tr><td>Staging Branches</td><td class="rt" id="sh-str">—</td><td class="ic"><div class="sp"><button class="sb" onclick="adjSH('st',-1)">−</button><input type="number" id="sh-stv" value="0" min="0" oninput="calc()"><button class="sb" onclick="adjSH('st',1)">+</button></div></td><td class="rt" id="sh-stt">—</td></tr>
+      </tbody>
+    </table>
+    <div class="div"></div>
+    <div style="display:flex;justify-content:space-between;align-items:center">
+      <span style="font-size:13px;font-weight:600;color:var(--muted)">Odoo.sh Monthly Total</span>
+      <span id="sh-mo" style="font-size:16px;font-weight:700;font-family:'DM Mono',monospace;color:var(--odoo)">—</span>
+    </div>
+  </div>
+</div>
+
+<!-- IMPLEMENTATION -->
+<div class="card fw">
+  <div class="ch"><div class="ch-ic">🔧</div><h2>Implementation</h2><span class="bdg bdg-nr">Non-Recurring</span></div>
+  <div class="cb">
+    <div class="stag snr">● Non-Recurring Cost</div>
+    <p style="font-size:12px;color:var(--muted);margin-bottom:12px">Select a base package, then apply a multiplier for custom hour counts (e.g. 1.25× = 125 hrs on the 100 hr base)</p>
+    <div class="ig" id="impl-opts"></div>
+    <div class="mr">
+      <label>Multiplier</label>
+      <div class="sp" style="max-width:120px;height:38px">
+        <button class="sb" onclick="adjMult(-0.25)">−</button>
+        <input type="number" id="impl-mult" value="1" min="0.25" step="0.25" oninput="calc()">
+        <button class="sb" onclick="adjMult(0.25)">+</button>
+      </div>
+      <span id="impl-hrs" style="font-size:13px;color:var(--muted)"></span>
+      <span id="impl-price" style="font-size:15px;font-weight:700;font-family:'DM Mono',monospace;color:var(--warn);margin-left:auto"></span>
+    </div>
+  </div>
+</div>
+
+<!-- APR -->
+<div class="card fw" id="apr-card" style="display:none">
+  <div class="ch"><div class="ch-ic">📈</div><h2>Financing / APR</h2></div>
+  <div class="cb">
+    <div style="display:grid;grid-template-columns:260px 1fr;gap:20px;align-items:start">
+      <div>
+        <p style="font-size:12px;color:var(--muted);margin-bottom:14px">Annual Percentage Rate over the financing term. Set 0% for interest-free.</p>
+        <div style="display:flex;align-items:center;gap:10px">
+          <span style="font-size:13px;font-weight:600;flex:1">APR <span style="font-size:11px;font-weight:400;color:var(--muted)">Annual %</span></span>
+          <div class="sp" style="max-width:130px;height:40px">
+            <button class="sb" onclick="adjAPR(-0.25)">−</button>
+            <input type="number" id="apr-val" value="0" min="0" step="0.25" oninput="calc()">
+            <button class="sb" onclick="adjAPR(0.25)">+</button>
+          </div>
+          <span style="font-size:14px;font-weight:700;color:var(--muted)">%</span>
+        </div>
+      </div>
+      <div>
+        <div style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.6px;margin-bottom:8px">Show Financing Terms in Summary</div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap" id="term-chips"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- SUMMARY -->
+<div class="card fw">
+  <div class="ch"><div class="ch-ic">💼</div><h2>Quote Summary</h2><span id="summary-ctag" class="ctag">USD</span></div>
+  <div id="summary-area" style="padding:22px"></div>
+</div>
+
+</div>
+
+<script>
+const LIC={
+  standard:{USD:{y1:24.90,y2:31.10},CAD:{y1:35.00,y2:43.70}},
+  custom:  {USD:{y1:49.00,y2:61.10},CAD:{y1:55.00,y2:68.70}},
+};
+const SH={USD:{w:72.00,s:0.25,st:18.00},CAD:{w:108.00,s:0.40,st:27.00}};
+const IMPL={
+  USD:[{h:0,p:0},{h:4,p:580},{h:25,p:3600},{h:50,p:7000},{h:100,p:12500}],
+  CAD:[{h:0,p:0},{h:4,p:850},{h:25,p:5260},{h:50,p:10300},{h:100,p:18250}],
+};
+const FT=[{mo:24,yr:2},{mo:36,yr:3},{mo:48,yr:4},{mo:60,yr:5}];
+const DREC={1:0,2:5,3:10,4:12.5,5:15};
+
+let ST={
+  cur:'USD',tier:'standard',
+  selYrs:new Set([1]),
+  implIdx:0,implMult:1,
+  discRec:0,discImpl:0,
+  perDisc:{1:{rec:0,impl:0},2:{rec:5,impl:0},3:{rec:10,impl:0},4:{rec:12.5,impl:0},5:{rec:15,impl:0}},
+  apr:0,
+  visFin:new Set([24]),
+  perCardTerm:{2:24,3:24,4:24,5:24}, // selected term per contract year
+};
+
+const $=id=>document.getElementById(id);
+function fmt(n,d=0){return(ST.cur==='CAD'?'CA$':'$')+n.toLocaleString('en-US',{minimumFractionDigits:d,maximumFractionDigits:d})}
+function calcFin(P,mo,apr){
+  if(!mo||!P)return null;
+  if(apr===0)return{mp:P/mo,fc:0,total:P};
+  const r=(apr/100)/12,mp=P*(r*Math.pow(1+r,mo))/(Math.pow(1+r,mo)-1);
+  return{mp,fc:mp*mo-P,total:mp*mo};
+}
+function isMulti(){return ST.selYrs.size>1}
+function sortedYrs(){return[...ST.selYrs].sort((a,b)=>a-b)}
+function getDisc(yr){
+  if(isMulti()){const pd=ST.perDisc[yr]||{rec:0,impl:0};return{rec:+pd.rec||0,impl:+pd.impl||0};}
+  return{rec:ST.discRec,impl:ST.discImpl};
+}
+function computeYr(yr,users,shMo){
+  const lic=LIC[ST.tier][ST.cur],d=getDisc(yr),df=d.rec/100;
+  const y1mo=lic.y1*users,y2mo=lic.y2*users;
+  let rec=0,recSav=0;
+  for(let y=1;y<=yr;y++){
+    const raw=(y===1?y1mo:y2mo+shMo)*12+(y===1?shMo*12:0);
+    const rawFull=(y===1?y1mo:y2mo)*12+shMo*12;
+    const ann=y===1?rawFull:rawFull*(1-df);
+    rec+=ann;if(y>1)recSav+=rawFull-ann;
+  }
+  const pkg=IMPL[ST.cur][ST.implIdx],implBase=pkg.p*ST.implMult;
+  const implSav=implBase*(d.impl/100),implFin=implBase-implSav;
+  return{yr,rec,recSav,implBase,implSav,implFin,total:rec+implFin,noImpl:pkg.h===0};
+}
+
+function setCur(c){ST.cur=c;$('btn-usd').classList.toggle('on',c==='USD');$('btn-cad').classList.toggle('on',c==='CAD');buildImpl();calc();}
+function setTier(t){ST.tier=t;$('btn-std').classList.toggle('on',t==='standard');$('btn-cus').classList.toggle('on',t==='custom');calc();}
+function toggleYr(y){
+  if(ST.selYrs.has(y)){if(ST.selYrs.size>1)ST.selYrs.delete(y);}
+  else ST.selYrs.add(y);
+  document.querySelectorAll('.yr-btn').forEach(b=>b.classList.toggle('on',ST.selYrs.has(+b.dataset.yr)));
+  const maxY=Math.max(...ST.selYrs),valid=FT.filter(t=>t.yr<=maxY).map(t=>t.mo);
+  ST.visFin=new Set(valid.filter(m=>ST.visFin.has(m)));
+  if(ST.visFin.size===0&&valid.length>0)ST.visFin.add(valid[0]);
+  updateDiscUI();buildTermChips();
+  $('apr-card').style.display=sortedYrs().some(y=>y>1)?'block':'none';
+  calc();
+}
+function adjUsers(d){const e=$('user-count');e.value=Math.max(1,(+e.value||1)+d);calc();}
+function adjSH(t,d){const m={w:'sh-w',s:'sh-s',st:'sh-stv'};const e=$(m[t]);e.value=Math.max(0,(+e.value||0)+d);calc();}
+function adjMult(d){const e=$('impl-mult');e.value=Math.max(0.25,(+e.value||1)+d).toFixed(2);calc();}
+function adjDisc(t,d){
+  if(t==='rec'){const e=$('disc-rec');e.value=Math.max(0,(+e.value||0)+d).toFixed(1);}
+  else{const e=$('disc-impl');e.value=Math.max(0,(+e.value||0)+d).toFixed(1);}
+  calc();
+}
+function adjPD(yr,t,d){
+  const e=$(`pcd-${yr}-${t}`);if(!e)return;
+  e.value=Math.max(0,(+e.value||0)+d).toFixed(1);
+  ST.perDisc[yr][t]=+e.value;calc();
+}
+function adjAPR(d){const e=$('apr-val');e.value=Math.max(0,(+e.value||0)+d).toFixed(2);calc();}
+function toggleFin(mo){
+  if(ST.visFin.has(mo)){if(ST.visFin.size>1)ST.visFin.delete(mo);}
+  else ST.visFin.add(mo);
+  buildTermChips();calc();
+}
+
+function setCardTerm(yr,mo){ST.perCardTerm[yr]=mo;calc();}
+
+function buildImpl(){
+  $('impl-opts').innerHTML=IMPL[ST.cur].map((p,i)=>`<label class="io"><input type="radio" name="impl" value="${i}" ${i===ST.implIdx?'checked':''} onchange="ST.implIdx=${i};calc()"><span class="il"><div class="ih">${p.h===0?'None':p.h+' hrs'}</div><div class="ip">${p.h===0?'$0':fmt(p.p)}</div></span></label>`).join('');
+}
+
+function buildTermChips(){
+  const c=$('term-chips');if(!c)return;
+  const maxY=Math.max(...ST.selYrs),valid=FT.filter(t=>t.yr<=maxY);
+  c.innerHTML=valid.length===0
+    ?'<span style="font-size:12px;color:var(--muted)">Only 1-year contracts — no financing available</span>'
+    :valid.map(t=>`<button class="tc ${ST.visFin.has(t.mo)?'on':''}" onclick="toggleFin(${t.mo})">${t.mo} mo (${t.yr} yr)</button>`).join('');
+}
+
+function updateDiscUI(){
+  const multi=isMulti();
+  $('disc-single').style.display=multi?'none':'block';
+  $('disc-multi').classList.toggle('vis',multi);
+  const msgs={1:'⚠️ 1-year: no multi-year discount.',2:'✅ 2-year: 5% suggested (Y2+).',3:'✅ 3-year: 10% suggested (Y2+).',4:'✅ 4-year: 12.5% suggested (Y2+).',5:'✅ 5-year: 15% suggested (Y2+).'};
+  if(!multi){
+    $('rem-single').innerHTML=sortedYrs().map(y=>`<div class="rem-pill">${msgs[y]}</div>`).join('');
+  } else {
+    $('pcd-grid').innerHTML=sortedYrs().map(y=>{
+      const pd=ST.perDisc[y]||{rec:0,impl:0};
+      return`<div class="pcd-row">
+        <div class="pcd-rt"><span class="yr-pill">${y}-Year</span><span style="font-size:11px;color:var(--muted)">${y>1?msgs[y].replace('✅ ',''):'No multi-year discount applies'}</span></div>
+        <div class="pcd-fields">
+          <div>
+            <label>Multi-Year Disc. %</label>
+            <div style="display:flex;align-items:center;gap:6px">
+              <div class="pcd-sp" style="${y===1?'opacity:.38;pointer-events:none':''}">
+                <button class="sb" onclick="adjPD(${y},'rec',-0.5)">−</button>
+                <input type="number" id="pcd-${y}-rec" class="co" value="${pd.rec}" min="0" max="100" step="0.5" ${y===1?'disabled':''} oninput="ST.perDisc[${y}].rec=+this.value;calc()">
+                <button class="sb" onclick="adjPD(${y},'rec',0.5)">+</button>
+              </div>
+              <span class="pcd-pct co">%</span>
+            </div>
+          </div>
+          <div>
+            <label>Impl. Disc. %</label>
+            <div style="display:flex;align-items:center;gap:6px">
+              <div class="pcd-sp">
+                <button class="sb" onclick="adjPD(${y},'impl',-0.5)">−</button>
+                <input type="number" id="pcd-${y}-impl" class="cw" value="${pd.impl}" min="0" step="0.5" oninput="ST.perDisc[${y}].impl=+this.value;calc()">
+                <button class="sb" onclick="adjPD(${y},'impl',0.5)">+</button>
+              </div>
+              <span class="pcd-pct cw">%</span>
+            </div>
+          </div>
+        </div>
+      </div>`;
+    }).join('');
+  }
+}
+
+function calc(){
+  const users=Math.max(1,+$('user-count').value||1);
+  const shW=Math.max(0,+$('sh-w').value||0);
+  const shS=Math.max(0,+$('sh-s').value||0);
+  const shSt=Math.max(0,+$('sh-stv').value||0);
+  ST.implMult=Math.max(0.25,+$('impl-mult').value||1);
+  ST.discRec=Math.max(0,+$('disc-rec').value||0);
+  ST.discImpl=Math.max(0,+$('disc-impl').value||0);
+  ST.apr=Math.max(0,+$('apr-val').value||0);
+  const lic=LIC[ST.tier][ST.cur],sh=SH[ST.cur];
+  const shMo=sh.w*shW+sh.s*shS+sh.st*shSt;
+  const maxYr=Math.max(...ST.selYrs);
+  const y1mo=lic.y1*users,y2mo=lic.y2*users;
+
+  // License table
+  $('lic-y1').value=fmt(lic.y1,2)+' / user / mo';
+  $('lic-y2').value=fmt(lic.y2,2)+' / user / mo';
+  let lh='';
+  for(let y=1;y<=5;y++){
+    const act=y<=maxYr,rate=y===1?lic.y1:lic.y2,mo=y===1?y1mo:y2mo;
+    lh+=`<tr ${!act?'class="dim"':''}><td>Year ${y} <span style="font-size:10px;opacity:.5">${y===1?'(Y1 Rate)':'(Y2+ Rate)'}</span></td><td class="rc">${fmt(rate,2)}</td><td>${fmt(mo,2)}</td><td>${act?fmt(mo*12,2):'—'}</td></tr>`;
+  }
+  lh+=`<tr class="tot"><td>Total License (${maxYr} yr)</td><td></td><td></td><td>${fmt(y1mo*12+(maxYr>1?y2mo*12*(maxYr-1):0),2)}</td></tr>`;
+  $('lic-body').innerHTML=lh;
+
+  // SH
+  $('sh-wr').textContent=fmt(sh.w,2)+'/mo';
+  $('sh-sr').textContent=fmt(sh.s,2)+'/GB/mo';
+  $('sh-str').textContent=fmt(sh.st,2)+'/mo';
+  $('sh-wt').textContent=fmt(sh.w*shW,2);
+  $('sh-st').textContent=fmt(sh.s*shS,2);
+  $('sh-stt').textContent=fmt(sh.st*shSt,2);
+  $('sh-mo').textContent=fmt(shMo,2);
+
+  // Impl
+  const pkg=IMPL[ST.cur][ST.implIdx],implBase=pkg.p*ST.implMult;
+  $('impl-hrs').textContent=pkg.h===0?'= No Implementation':`= ${Math.round(pkg.h*ST.implMult)} hrs`;
+  $('impl-price').textContent=pkg.h===0?'':fmt(implBase,2);
+  $('summary-ctag').textContent=ST.cur;
+
+  const results=sortedYrs().map(y=>computeYr(y,users,shMo));
+  buildSummary(results);
+}
+
+function buildSummary(results){
+  const multi=results.length>1,apr=ST.apr;
+  let h='';
+
+  if(multi){
+    h+=`<div style="margin-bottom:24px"><div class="sl">📊 Contract Comparison</div><div style="overflow-x:auto"><table class="ct"><thead><tr><th>Metric</th>`;
+    results.forEach(r=>h+=`<th class="yh">${r.yr}-Year</th>`);
+    h+=`</tr></thead><tbody>`;
+    h+=`<tr><td>Recurring Total</td>`;results.forEach(r=>h+=`<td>${fmt(r.rec,2)}</td>`);h+=`</tr>`;
+    h+=`<tr><td>Implementation</td>`;results.forEach(r=>h+=`<td>${r.noImpl?'—':fmt(r.implFin,2)}</td>`);h+=`</tr>`;
+    h+=`<tr class="rh"><td>Total Invoice</td>`;results.forEach(r=>h+=`<td>${fmt(r.total,2)}</td>`);h+=`</tr>`;
+    if(results.some(r=>r.recSav>0.005)){h+=`<tr class="rs"><td>Rec. Disc. Saved</td>`;results.forEach(r=>h+=`<td>${r.recSav>0.005?'−'+fmt(r.recSav,2):'—'}</td>`);h+=`</tr>`;}
+    if(results.some(r=>r.implSav>0.005)){h+=`<tr class="rs"><td>Impl. Disc. Saved</td>`;results.forEach(r=>h+=`<td>${r.implSav>0.005?'−'+fmt(r.implSav,2):'—'}</td>`);h+=`</tr>`;}
+    const maxYr=Math.max(...results.map(r=>r.yr));
+    FT.filter(t=>t.yr<=maxYr&&ST.visFin.has(t.mo)).forEach(term=>{
+      h+=`<tr class="rh"><td>${term.mo}-mo Payment</td>`;
+      results.forEach(r=>{
+        if(r.yr<term.yr){h+=`<td class="na">N/A</td>`;}
+        else{const f=calcFin(r.total,term.mo,apr);h+=`<td>${fmt(f.mp,2)}<span style="font-size:10px;color:var(--odoo-l);display:block;font-family:'DM Sans',sans-serif;opacity:.7">${term.mo} payments</span></td>`;}
+      });
+      h+=`</tr>`;
+    });
+    if(apr>0){
+      FT.filter(t=>t.yr<=maxYr&&ST.visFin.has(t.mo)).forEach(term=>{
+        h+=`<tr class="rk"><td>Financing Cost (${term.mo} mo)</td>`;
+        results.forEach(r=>{if(r.yr<term.yr){h+=`<td class="na">N/A</td>`;}else{const f=calcFin(r.total,term.mo,apr);h+=`<td>${fmt(f.fc,2)}</td>`;}});
+        h+=`</tr>`;
+      });
+    }
+    h+=`</tbody></table></div></div>`;
+  }
+
+  const cols=Math.min(results.length,3);
+  h+=`<div class="sl">💼 Client Summary${multi?' — All Selected Contracts':''}</div>`;
+  h+=`<div class="cc-grid" style="grid-template-columns:repeat(${cols},1fr)">`;
+  results.forEach(r=>{
+    const financed=r.yr>1;
+    // Available terms for this contract length
+    const availTerms=FT.filter(t=>t.yr<=r.yr);
+    // Get selected term for this card (default to shortest available)
+    let selMo=ST.perCardTerm[r.yr]||null;
+    if(financed&&availTerms.length>0){
+      if(!selMo||!availTerms.find(t=>t.mo===selMo)) selMo=availTerms[0].mo;
+      ST.perCardTerm[r.yr]=selMo;
+    }
+    const pf=financed&&selMo?calcFin(r.total,selMo,apr):null;
+
+    // Y1 savings: difference between paying Y2+ rate vs Y1 rate for year 1
+    const lic=LIC[ST.tier][ST.cur];
+    const users=+$('user-count').value||1;
+    const y1Savings=(lic.y2-lic.y1)*users*12; // how much cheaper Y1 is vs Y2+ rate
+
+    // Term selector chips
+    const termChips=financed?`<div class="cc-terms">${availTerms.map(t=>`<button class="cct ${t.mo===selMo?'on':''}" onclick="setCardTerm(${r.yr},${t.mo})">${t.mo}mo</button>`).join('')}</div>`:'';
+
+    h+=`<div class="cc">`;
+    // Header
+    h+=`<div class="cc-hdr"><div class="cc-ttl">${r.yr}-Year Contract<br>${ST.tier.charAt(0).toUpperCase()+ST.tier.slice(1)} · ${users} Users · ${ST.cur}</div>${termChips}</div>`;
+
+    // Hero: monthly payment or total invoice
+    if(!financed||!pf){
+      h+=`<div class="cc-hero"><div class="h-lbl">Total Invoice</div><div class="h-val">${fmt(r.total,2)}</div><div class="h-sub">Billed annually · no financing</div></div>`;
+    } else {
+      h+=`<div class="cc-hero"><div class="h-lbl">Monthly Payment</div><div class="h-val">${fmt(pf.mp,2)}</div><div class="h-sub">${selMo} payments${apr>0?' · APR '+apr+'%':' · Interest-free'}</div></div>`;
+    }
+
+    // Secondary stats
+    h+=`<div class="cc-stats">`;
+    h+=`<div class="cc-stat"><div class="st-l">Total Invoice</div><div class="st-v">${fmt(r.total,2)}</div></div>`;
+    if(financed&&pf&&apr>0){
+      h+=`<div class="cc-stat"><div class="st-l">Total w/ Financing</div><div class="st-v">${fmt(pf.total,2)}</div></div>`;
+    } else if(financed){
+      h+=`<div class="cc-stat"><div class="st-l">Financing</div><div class="st-v" style="font-size:13px;opacity:.8">Interest-free</div></div>`;
+    }
+    if(!r.noImpl){
+      h+=`<div class="cc-stat"><div class="st-l">Implementation</div><div class="st-v">${fmt(r.implFin,2)}</div></div>`;
+    }
+    h+=`</div>`;
+
+    // Footer breakdown
+    h+=`<div class="cc-ft">`;
+    h+=`<div class="cf"><div class="cf-l">Recurring Total</div><div class="cf-v">${fmt(r.rec,2)}</div></div>`;
+    // Y1 rate savings highlight (only if contract > 1 yr so there's a comparison)
+    if(r.yr>1&&y1Savings>0.005){
+      h+=`<div class="cf"><div class="cf-l">Y1 Rate Savings</div><div class="cf-v y1hl">−${fmt(y1Savings,2)}</div><div class="y1-badge">⚡ Lower Y1 rate</div></div>`;
+    }
+    if(r.recSav>0.005)h+=`<div class="cf"><div class="cf-l">Multi-Year Disc. Saved</div><div class="cf-v grn">−${fmt(r.recSav,2)}</div></div>`;
+    if(r.implSav>0.005)h+=`<div class="cf"><div class="cf-l">Impl. Disc. Saved</div><div class="cf-v grn">−${fmt(r.implSav,2)}</div></div>`;
+    h+=`</div></div>`;
+  });
+  h+=`</div>`;
+  $('summary-area').innerHTML=h;
+}
+
+buildImpl();buildTermChips();updateDiscUI();calc();
+['user-count','sh-w','sh-s','sh-stv','impl-mult','disc-rec','disc-impl','apr-val'].forEach(id=>{
+  const e=$(id);if(e)e.addEventListener('input',calc);
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="res_partner_view_form_nko_test_one" model="ir.ui.view">
+        <field name="name">res.partner.form.nko.test.one</field>
+        <field name="model">res.partner</field>
+        <field name="inherit_id" ref="base.view_partner_form"/>
+        <field name="arch" type="xml">
+            <xpath expr="//field[@name='category_id']" position="after">
+                <field name="x_nko_test_one"/>
+                <field name="x_text_2"/>
+                <field name="x_test_two"/>
+            </xpath>
+        </field>
+    </record>
+</odoo>
