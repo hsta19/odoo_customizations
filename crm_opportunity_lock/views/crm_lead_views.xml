@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="crm_lead_view_form_lock_inherit" model="ir.ui.view">
+        <field name="name">crm.lead.view.form.lock</field>
+        <field name="model">crm.lead</field>
+        <field name="inherit_id" ref="crm.crm_lead_view_form"/>
+        <field name="arch" type="xml">
+
+            <!-- Lock / Unlock buttons before the stage statusbar -->
+            <xpath expr="//header/field[@name='stage_id']" position="before">
+                <button name="action_lock"
+                        string="Lock"
+                        type="object"
+                        class="btn-secondary"
+                        invisible="is_locked"/>
+                <button name="action_unlock"
+                        string="Unlock"
+                        type="object"
+                        class="btn-warning"
+                        invisible="not is_locked"/>
+            </xpath>
+
+            <!-- Stage statusbar readonly when locked -->
+            <xpath expr="//header/field[@name='stage_id']" position="attributes">
+                <attribute name="readonly">is_locked</attribute>
+            </xpath>
+
+            <!-- Warning banner displayed above the form sheet -->
+            <xpath expr="//sheet" position="before">
+                <div class="alert alert-warning d-flex align-items-center gap-2 mb-0 rounded-0"
+                     role="alert"
+                     invisible="not is_locked">
+                    <i class="fa fa-lock fa-lg"/>
+                    <span>
+                        This opportunity is <strong>locked</strong> and cannot be edited.
+                        Click <strong>Unlock</strong> to allow changes.
+                    </span>
+                </div>
+            </xpath>
+
+            <!-- Propagate readonly to the entire sheet when locked -->
+            <xpath expr="//sheet" position="attributes">
+                <attribute name="readonly">is_locked</attribute>
+            </xpath>
+
+            <!-- Propagate readonly to notebook tabs when locked -->
+            <xpath expr="//notebook" position="attributes">
+                <attribute name="readonly">is_locked</attribute>
+            </xpath>
+
+        </field>
+    </record>
+</odoo>
