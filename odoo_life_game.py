@@ -31,7 +31,6 @@ DEPT_COL = {
 # GAME STATE GLOBALS
 # ════════════════════════════════════════════════════
 game_state   = 'create'   # create / work / evening / home / bar
-current_floor = 1          # 1 or 2 (within work state)
 
 # ── Player Stats ─────────────────────────────────────
 stats = {
@@ -93,22 +92,396 @@ friendship = {}
 bar_talked_tonight = set()  # NPC names talked to at bar this evening
 
 # ── Map entity groups ─────────────────────────────────
-floor1_entities = []
-floor2_entities = []
+office_entities = []
 home_entities   = []
 bar_entities    = []
 
 # ── Spawn points ─────────────────────────────────────
 SPAWN = {
-    'floor1': Vec3(12, 1.5, 5),
-    'floor2': Vec3(10, 13.5, 13),   # Fix 1: raised so player falls and lands properly
+    'floor1': Vec3(10, 1.5, 6),    # lobby
+    'floor2': Vec3(10, 1.5, 6),    # keep for compat, same as floor1
     'home':   Vec3(8,  1.5, 6),
     'bar':    Vec3(12, 1.5, 3),
 }
 
+COFFEE_POS  = Vec3(46.5, 1.5, 10)
+VENDING_POS = Vec3(60,   1.5, 10)
+COUCH_POS   = Vec3(53,   1.5, 9.5)
+
+Y0 = 0
+
+PLAYER_DESK_POS = {
+    'Sales': Vec3(11,  Y0+1.5, 28),
+    'BSA':   Vec3(29,  Y0+1.5, 28),
+    'FSS':   Vec3(46,  Y0+1.5, 28),
+    'HR':    Vec3(60.5,Y0+1.5, 26),
+}
+
 # ════════════════════════════════════════════════════
-# ROOM BUILDER
+# BUILDING HELPERS
 # ════════════════════════════════════════════════════
+ROOM_H = 4.5
+DOOR_W = 3.5
+
+def build_room(x1, z1, x2, z2, y, h, fc, wc, cc,
+               door_south=None, door_north=None,
+               door_west=None,  door_east=None,
+               group=None):
+    """Build a box room. door_* = centre coordinate of doorway gap."""
+    cx, cz = (x1+x2)/2, (z1+z2)/2
+    w, d   = x2-x1, z2-z1
+    ents   = []
+
+    # Thick invisible collision floor
+    thick = Entity(model='cube', position=(cx, y-1.5, cz),
+                   scale=(w+0.5, 3.5, d+0.5), collider='box')
+    thick.visible = False
+    ents.append(thick)
+
+    # Visible floor + ceiling
+    ents.append(box((cx, y+0.15,    cz), (w, 0.30, d), fc))
+    ents.append(box((cx, y+h+0.15,  cz), (w, 0.30, d), cc))
+
+    # Ceiling light strips
+    for lz in (z1+d*0.3, z1+d*0.7):
+        ents.append(box((cx, y+h-0.08, lz), (w*0.65, 0.07, 0.35), C(255,250,220)))
+
+    # Baseboard trim
+    tc = Color(min(wc.r*1.25,1), min(wc.g*1.25,1), min(wc.b*1.25,1), 1)
+    ents += [
+        box((cx,      y+0.35, z1+0.18), (w,    0.22, 0.10), tc),
+        box((cx,      y+0.35, z2-0.18), (w,    0.22, 0.10), tc),
+        box((x1+0.18, y+0.35, cz),      (0.10, 0.22, d),    tc),
+        box((x2-0.18, y+0.35, cz),      (0.10, 0.22, d),    tc),
+    ]
+
+    def seg_h(xa, xb, zp):
+        if xb > xa+0.25:
+            ents.append(box(((xa+xb)/2, y+h/2, zp), (xb-xa, h, 0.30), wc, True))
+    def seg_v(za, zb, xp):
+        if zb > za+0.25:
+            ents.append(box((xp, y+h/2, (za+zb)/2), (0.30, h, zb-za), wc, True))
+
+    def wall_h(zp, dc):
+        if dc is None:
+            seg_h(x1, x2, zp)
+        else:
+            d1, d2 = dc-DOOR_W/2, dc+DOOR_W/2
+            seg_h(x1, d1, zp); seg_h(d2, x2, zp)
+            ents.append(box((dc, y+h-0.22, zp), (DOOR_W, 0.42, 0.30), wc))
+    def wall_v(xp, dc):
+        if dc is None:
+            seg_v(z1, z2, xp)
+        else:
+            d1, d2 = dc-DOOR_W/2, dc+DOOR_W/2
+            seg_v(z1, d1, xp); seg_v(d2, z2, xp)
+            ents.append(box((xp, y+h-0.22, dc), (0.30, 0.42, DOOR_W), wc))
+
+    wall_h(z1, door_south)
+    wall_h(z2, door_north)
+    wall_v(x1, door_west)
+    wall_v(x2, door_east)
+
+    if group is not None:
+        group.extend(ents)
+    return ents
+
+# ════════════════════════════════════════════════════
+# CORRIDOR  (z=12-16, x=-1-69)
+# ════════════════════════════════════════════════════
+CORR_FC = C(55, 58, 72)
+CORR_WC = C(68, 72, 90)
+CORR_CC = C(90, 94, 114)
+
+# Floor + ceiling
+office_entities += [
+    box((34, Y0+0.15,   14), (72, 0.30, 4), CORR_FC),
+    box((34, Y0+ROOM_H+0.15, 14), (72, 0.30, 4), CORR_CC),
+]
+# Thick floor for corridor
+_ct = Entity(model='cube', position=(34, Y0-1.5, 14), scale=(72, 3.5, 5), collider='box')
+_ct.visible = False
+office_entities.append(_ct)
+# End walls
+office_entities += [
+    box((-1,  Y0+ROOM_H/2, 14), (0.30, ROOM_H, 4), CORR_WC, True),
+    box((69,  Y0+ROOM_H/2, 14), (0.30, ROOM_H, 4), CORR_WC, True),
+]
+# Ceiling lights
+for _lx in range(5, 68, 10):
+    office_entities.append(box((_lx, Y0+ROOM_H-0.08, 14), (2.5, 0.07, 0.35), C(255,250,220)))
+
+# ── Corridor wall decorations ────────────────────────
+# Room name signs above doorways on SOUTH wall (z=12, north-facing rooms)
+for _rname, _rcx in [('LOBBY',10),('CAFETERIA',32),('BREAK ROOM',53)]:
+    office_entities.append(box((_rcx, Y0+ROOM_H-0.28, 12.2), (len(_rname)*0.55+1.2, 0.44, 0.12), PURPLE))
+    _sl = Text(text=_rname, world_space=True,
+               position=Vec3(_rcx, Y0+ROOM_H-0.28, 11.9),
+               scale=10, origin=(0,0), color=Color(1,1,1,1))
+    office_entities.append(_sl)
+
+# Room name signs above doorways on NORTH wall (z=16, south-facing rooms)
+for _rname, _rcx in [('SALES',8.5),('BSA',26),('FSS',43.5),('HR',60.5)]:
+    office_entities.append(box((_rcx, Y0+ROOM_H-0.28, 15.8), (len(_rname)*0.55+1.2, 0.44, 0.12), PURPLE))
+    _sl = Text(text=_rname, world_space=True,
+               position=Vec3(_rcx, Y0+ROOM_H-0.28, 16.1),
+               scale=10, origin=(0,0), color=Color(1,1,1,1))
+    office_entities.append(_sl)
+
+# Odoo posters on corridor walls (purple framed prints)
+for _px, _pz, _pw in [(4,12.2,3.5),(17,12.2,3.5),(40,12.2,4),(20,15.8,3.5),(36,15.8,3.5),(50,15.8,3.5)]:
+    office_entities += [
+        box((_px, Y0+2.2, _pz), (_pw,   2.2,  0.10), C(80,50,140)),
+        box((_px, Y0+2.2, _pz), (_pw-0.4,1.8, 0.08), C(114,46,209)),
+    ]
+
+# ════════════════════════════════════════════════════
+# LOBBY  (x=0-20, z=0-12)  door_north cx=10
+# ════════════════════════════════════════════════════
+build_room(0,0, 20,12, Y0, ROOM_H,
+           C(55,55,70), C(70,72,95), C(105,108,128),
+           door_north=10, group=office_entities)
+
+# Reception desk
+office_entities += [
+    box((10, Y0+0.9,  9),   (7,   0.9, 1.8), C(80,50,30),  True),
+    box((10, Y0+1.4,  9),   (7.3, 0.06,2.0), C(110,70,40)),
+    box((10, Y0+1.55, 9.5), (0.7, 0.4, 0.05),C(20,20,30)),
+    box((10, Y0+1.55, 9.48),(0.58,0.3, 0.04),C(40,80,150)),
+]
+# Reception nameplate
+office_entities.append(box((10, Y0+1.48, 7.8), (3, 0.14, 0.08), C(220,200,255)))
+
+# Lobby Odoo sign
+office_entities += [
+    box((10, Y0+3.2, 11.7), (9.5, 1.0, 0.12), PURPLE),
+    box((10, Y0+3.2, 11.6), (5.5, 0.65,0.09), C(140,80,220)),
+]
+_ls = Text(text='ODOO LIFE', world_space=True,
+           position=Vec3(10, Y0+3.2, 11.4),
+           scale=16, origin=(0,0), color=Color(1,1,1,1))
+office_entities.append(_ls)
+
+# Waiting chairs
+for _xi in (3, 6, 14, 17):
+    office_entities += [
+        box((_xi, Y0+0.45, 4), (0.8,0.08,0.8), C(60,60,200), True),
+        box((_xi, Y0+0.85, 4.4),(0.8,0.7, 0.08),C(60,60,200)),
+    ]
+# Carpet
+office_entities.append(box((10, Y0+0.31, 6), (18, 0.04, 10), C(65,48,105)))
+# Corner plants
+for _px, _pz in ((1,1),(18,1),(1,10),(18,10)):
+    office_entities += [
+        box((_px, Y0+0.5, _pz), (0.8,0.8,0.8), C(80,55,30), True),
+        box((_px, Y0+1.2, _pz), (0.6,0.9,0.6), C(30,110,30)),
+        box((_px, Y0+1.65,_pz+0.3),(0.35,0.55,0.35),C(40,130,40)),
+    ]
+
+EXIT_DOOR_POS = Vec3(10, Y0+1.5, 0.5)
+office_entities += [
+    box((10, Y0+1.2, 0.4),  (2.2, 2.6,  0.25), C(100,68,30)),
+    box((10, Y0+1.15,0.35), (1.8, 2.35, 0.15), C(139,95,50), True),
+    box((11, Y0+1.1, 0.28), (0.1, 0.15, 0.12), C(200,170,50)),
+]
+
+# ════════════════════════════════════════════════════
+# CAFETERIA  (x=21-43, z=0-12)  door_north cx=32
+# ════════════════════════════════════════════════════
+build_room(21,0, 43,12, Y0, ROOM_H,
+           C(58,52,45), C(78,70,60), C(110,100,88),
+           door_north=32, group=office_entities)
+
+# Serving counter
+office_entities += [
+    box((35, Y0+1.05, 9),(10,1.0, 2.0), C(110,85,60), True),
+    box((35, Y0+1.55, 9),(10.2,0.07,2.2),C(200,185,160)),
+]
+for _fi, _fc in enumerate((C(255,200,100),C(180,100,80),C(120,180,80))):
+    office_entities.append(box((30+_fi*3, Y0+1.6, 8.5),(2,0.05,0.8),_fc))
+# Shelves above counter
+for _sx in (28,32,36,40):
+    office_entities.append(box((_sx, Y0+2.4, 10.5),(3,0.08,0.7),C(140,100,60)))
+
+# Menu board on back wall
+office_entities += [
+    box((32, Y0+3.5, 11.8),(18, 2.5, 0.12), C(35,55,35)),
+    box((32, Y0+3.5, 11.7),(16, 2.1, 0.08), C(50,75,50)),
+]
+_ms = Text(text='CAFETERIA', world_space=True,
+           position=Vec3(32, Y0+3.5, 11.5),
+           scale=13, origin=(0,0), color=Color(0.8,1,0.8,1))
+office_entities.append(_ms)
+
+# Dining tables
+for _row in range(2):
+    for _col in range(3):
+        _tx, _tz = 24+_col*5, 2+_row*5
+        office_entities.append(box((_tx,Y0+0.72,_tz),(2.5,0.08,2.5),C(200,175,140),True))
+        for _dx,_dz in ((1.3,0),(-1.3,0),(0,1.3),(0,-1.3)):
+            office_entities.append(box((_tx+_dx,Y0+0.42,_tz+_dz),(0.6,0.08,0.6),C(180,75,75),True))
+
+CAFETERIA_POS = Vec3(35, Y0+1.5, 9)
+
+# ════════════════════════════════════════════════════
+# BREAK ROOM  (x=44-62, z=0-12)  door_north cx=53
+# ════════════════════════════════════════════════════
+build_room(44,0, 62,12, Y0, ROOM_H,
+           C(50,60,55), C(65,78,70), C(95,110,100),
+           door_north=53, group=office_entities)
+
+# Couch
+office_entities += [
+    box((53, Y0+0.3, 9.5),  (6,   0.55, 1.8), C(80,100,90),  True),
+    box((53, Y0+0.72,9.5),  (6,   0.3,  1.8), C(100,125,115)),
+    box((53, Y0+0.72,10.5), (6,   0.5,  0.18),C(90,112,105)),
+    box((49.8,Y0+0.5,9.5),  (0.18,0.65, 1.6), C(75,95,88)),
+    box((56.2,Y0+0.5,9.5),  (0.18,0.65, 1.6), C(75,95,88)),
+]
+COUCH_POS = Vec3(53, Y0+1.5, 9.5)
+
+# Coffee machine
+office_entities += [
+    box((46.5,Y0+1.2, 10.5),(1.0, 2.0, 0.9), C(30,30,35), True),
+    box((46.5,Y0+1.5, 10.0),(0.7, 0.4, 0.3), C(50,50,60)),
+    box((46.5,Y0+1.55,10.0),(0.4, 0.15,0.2), C(20,20,22)),
+    box((46.5,Y0+1.75,10.0),(0.3, 0.05,0.15),C(210,80,40)),
+]
+COFFEE_POS = Vec3(46.5, Y0+1.5, 10)
+
+# Vending machine
+office_entities += [
+    box((60,  Y0+1.5, 10.5),(1.2, 2.8, 0.9), C(40,60,120), True),
+    box((60,  Y0+1.5, 10.1),(0.9, 2.0, 0.3), C(20,35,80)),
+    box((60,  Y0+1.5, 10.0),(0.8, 1.8, 0.2), C(30,50,110)),
+]
+for _vy in range(5):
+    for _vx in range(2):
+        _vc = (C(220,60,60),C(60,180,60),C(60,120,220),C(220,180,40),C(180,60,220))[_vy]
+        office_entities.append(box((59.7+_vx*0.4, Y0+0.7+_vy*0.38, 10.05),(0.28,0.25,0.1),_vc))
+VENDING_POS = Vec3(60, Y0+1.5, 10)
+
+# Side table + mugs
+office_entities += [
+    box((50, Y0+0.6, 8),(1.0, 1.0, 1.0), C(70,90,80), True),
+    box((50, Y0+1.1, 8),(1.1, 0.06,1.1), C(90,110,100)),
+    box((50, Y0+1.2, 8),(0.2, 0.25,0.2), C(200,80,40)),
+]
+
+# Break room sign
+_brs = Text(text='BREAK ROOM', world_space=True,
+            position=Vec3(53, Y0+3.8, 11.5),
+            scale=12, origin=(0,0), color=Color(0.85,1,0.9,1))
+office_entities.append(_brs)
+
+# ════════════════════════════════════════════════════
+# DESK BUILDER (for dept rooms)
+# ════════════════════════════════════════════════════
+def make_desk(x, z, y=Y0, empty=False, group=None):
+    dc   = C(90,65,35) if empty else C(130,95,50)
+    ents = [box((x, y+0.78, z), (2.1,0.08,1.1), dc, True)]
+    for _lx,_lz in ((-0.9,-0.4),(0.9,-0.4),(-0.9,0.4),(0.9,0.4)):
+        ents.append(box((x+_lx,y+0.38,z+_lz),(0.1,0.76,0.1),C(70,50,25),True))
+    if not empty:
+        ents += [
+            box((x,     y+0.84, z+0.35),(0.08,0.28,0.08),C(40,40,40)),
+            box((x,     y+1.22, z+0.38),(0.85,0.50,0.06),C(20,20,35)),
+            box((x,     y+1.22, z+0.36),(0.72,0.38,0.04),C(40,80,160)),
+            box((x,     y+0.82, z-0.05),(0.80,0.03,0.35),C(60,60,65)),
+            box((x+0.55,y+0.82, z+0.05),(0.12,0.03,0.2),C(50,50,55)),
+            box((x-0.70,y+0.90, z+0.2), (0.15,0.22,0.15),C(200,80,40)),
+            box((x-0.70,y+1.01, z+0.2), (0.13,0.04,0.13),C(30,15,5)),
+            box((x,     y+0.42, z-0.65),(0.75,0.07,0.70),C(45,45,55),True),
+            box((x,     y+0.82, z-0.95),(0.75,0.65,0.08),C(45,45,55)),
+        ]
+    else:
+        ents += [
+            box((x, y+0.82, z-0.05),(1.5,0.03,0.75),C(210,210,220)),
+            box((x, y+0.42, z-0.65),(0.75,0.07,0.70),C(45,45,55),True),
+            box((x, y+0.82, z-0.95),(0.75,0.65,0.08),C(45,45,55)),
+        ]
+    for _clx,_clz in ((-0.3,-0.25),(0.3,-0.25),(-0.3,0.25),(0.3,0.25)):
+        ents.append(box((x+_clx,y+0.18,z-0.65+_clz),(0.07,0.42,0.07),C(60,60,70),True))
+    if group is not None:
+        group.extend(ents)
+    return ents
+
+# ════════════════════════════════════════════════════
+# SALES DEPT  (x=0-17, z=16-36)  door_south cx=8.5
+# ════════════════════════════════════════════════════
+build_room(0,16, 17,36, Y0, ROOM_H,
+           C(45,52,78), C(58,64,90), C(88,95,118),
+           door_south=8.5, group=office_entities)
+office_entities.append(box((8.5, Y0+3.8, 16.25),(10,0.45,0.12),PURPLE))
+_ds = Text(text='SALES', world_space=True,
+           position=Vec3(8.5,Y0+3.8,16.0),scale=14,origin=(0,0),color=Color(1,1,1,1))
+office_entities.append(_ds)
+# NPC desks
+for _lx,_lz in ((3,22),(7,22),(11,22),(3,28),(7,28)):
+    make_desk(_lx,_lz,Y0,group=office_entities)
+# Player desk
+make_desk(11,28,Y0,empty=True,group=office_entities)
+# Manager desk
+make_desk(8.5,33,Y0,group=office_entities)
+# Dept carpet strip
+office_entities.append(box((8.5,Y0+0.32,26),(15,0.04,18),C(40,48,72)))
+
+# ════════════════════════════════════════════════════
+# BSA DEPT  (x=18-34, z=16-36)  door_south cx=26
+# ════════════════════════════════════════════════════
+build_room(18,16, 34,36, Y0, ROOM_H,
+           C(42,62,65), C(55,78,80), C(85,112,115),
+           door_south=26, group=office_entities)
+office_entities.append(box((26,Y0+3.8,16.25),(10,0.45,0.12),PURPLE))
+_db = Text(text='BSA', world_space=True,
+           position=Vec3(26,Y0+3.8,16.0),scale=14,origin=(0,0),color=Color(1,1,1,1))
+office_entities.append(_db)
+for _lx,_lz in ((21,22),(25,22),(29,22),(21,28),(25,28)):
+    make_desk(_lx,_lz,Y0,group=office_entities)
+make_desk(29,28,Y0,empty=True,group=office_entities)
+make_desk(26,33,Y0,group=office_entities)
+office_entities.append(box((26,Y0+0.32,26),(14,0.04,18),C(38,58,60)))
+
+# ════════════════════════════════════════════════════
+# FSS DEPT  (x=35-52, z=16-36)  door_south cx=43.5
+# ════════════════════════════════════════════════════
+build_room(35,16, 52,36, Y0, ROOM_H,
+           C(62,55,45), C(80,70,58), C(115,102,85),
+           door_south=43.5, group=office_entities)
+office_entities.append(box((43.5,Y0+3.8,16.25),(10,0.45,0.12),PURPLE))
+_df = Text(text='FSS', world_space=True,
+           position=Vec3(43.5,Y0+3.8,16.0),scale=14,origin=(0,0),color=Color(1,1,1,1))
+office_entities.append(_df)
+for _lx,_lz in ((38,22),(42,22),(46,22),(38,28),(42,28)):
+    make_desk(_lx,_lz,Y0,group=office_entities)
+make_desk(46,28,Y0,empty=True,group=office_entities)
+make_desk(43.5,33,Y0,group=office_entities)
+office_entities.append(box((43.5,Y0+0.32,26),(15,0.04,18),C(58,50,40)))
+
+# ════════════════════════════════════════════════════
+# HR DEPT  (x=53-68, z=16-30)  door_south cx=60.5
+# ════════════════════════════════════════════════════
+build_room(53,16, 68,30, Y0, ROOM_H,
+           C(55,45,70), C(70,58,90), C(105,88,130),
+           door_south=60.5, group=office_entities)
+office_entities.append(box((60.5,Y0+3.8,16.25),(8,0.45,0.12),PURPLE))
+_dh = Text(text='HR', world_space=True,
+           position=Vec3(60.5,Y0+3.8,16.0),scale=14,origin=(0,0),color=Color(1,1,1,1))
+office_entities.append(_dh)
+make_desk(60.5,26,Y0,group=office_entities)
+# Small couch + plant in HR
+office_entities += [
+    box((55,Y0+0.4,28),(2.5,0.5,1.2),C(120,90,150),True),
+    box((55,Y0+0.7,28),(2.5,0.25,1.2),C(150,115,180)),
+    box((57.5,Y0+0.8,22),(0.6,1.4,0.6),C(40,120,40),True),
+    box((57.5,Y0+1.6,22),(0.5,0.7,0.5),C(50,140,50)),
+]
+
+# ════════════════════════════════════════════════════
+# HOME MAP  (small apartment)
+# ════════════════════════════════════════════════════
+HX, HY, HZ = 200, 0, 0   # offset so it doesn't overlap
+
 def make_room(ox, oy, oz, w, d, h, fc, wc, cc, accent=True, group=None):
     cx, cz = ox+w/2, oz+d/2
     ents = [
@@ -140,277 +513,9 @@ def make_room(ox, oy, oz, w, d, h, fc, wc, cc, accent=True, group=None):
         group.extend(ents)
     return ents
 
-# ════════════════════════════════════════════════════
-# FLOOR 1: LOBBY + CAFETERIA  (y=0)
-# ════════════════════════════════════════════════════
-def _add1(e):
-    floor1_entities.append(e)
-    return e
-
-Y1 = 0
-make_room(0, Y1, 0, 50, 26, 6, C(55,55,70), C(70,70,95), C(110,110,130), group=floor1_entities)
-
-floor1_entities += [
-    box((12, Y1+0.9, 20),  (7,   0.9, 1.8), C(80,50,30),   True),
-    box((12, Y1+1.4, 20),  (7.3, 0.06,2),   C(110,70,40)),
-    box((12, Y1+2.8, 25.7),(9,  1.2,  0.1), PURPLE),
-]
-for xi in (4, 7, 10, 13):
-    floor1_entities += [
-        box((xi, Y1+0.45, 8), (0.8,0.08,0.8), C(60,60,200), True),
-        box((xi, Y1+0.85, 8.4),(0.8,0.7,0.08),C(60,60,200)),
-    ]
-for px, pz in ((2,22),(22,22)):
-    floor1_entities.append(box((px, Y1+0.9, pz), (0.7,1.8,0.7), C(40,120,40), True))
-
-# Divider
-floor1_entities += [
-    box((25, Y1+3, 3),  (0.3, 6, 6),  C(80,80,110), True),
-    box((25, Y1+3, 21), (0.3, 6, 10), C(80,80,110), True),
-]
-
-# Cafeteria
-floor1_entities += [
-    box((38, Y1+1.05,23),(10,1,2),    C(110,85,60),   True),
-    box((38, Y1+1.55,23),(10.2,.07,2.2),C(200,185,160)),
-]
-for fi, fc in enumerate((C(255,200,100),C(180,100,80),C(120,180,80))):
-    floor1_entities.append(box((33+fi*3, Y1+1.6,22.5),(2,.05,.8),fc))
-for row in range(2):
-    for col in range(3):
-        tx, tz = 28+col*6, 5+row*6
-        floor1_entities.append(box((tx,Y1+0.72,tz),(2.5,.08,2.5),C(200,175,140),True))
-        for dx,dz in ((1.3,0),(-1.3,0),(0,1.3),(0,-1.3)):
-            floor1_entities.append(box((tx+dx,Y1+0.42,tz+dz),(.6,.08,.6),C(190,80,80),True))
-
-# Cafeteria serving counter (interact point)
-CAFETERIA_POS = Vec3(38, Y1+1.5, 23)
-
-# Exit door (south wall, lobby)
-floor1_entities.append(box((12, Y1+1.5, 0.5), (1.5, 2.5, 0.3), C(139,90,43), True))
-EXIT_DOOR_POS = Vec3(12, Y1+1.5, 1)
-
-# Staircase to Floor 2
-for s in range(5):
-    floor1_entities.append(
-        box((47+s*.5, Y1+0.2+s*.7, 13),(1.5, .3+s*.7, 1.5), C(150,130,110), True)
-    )
-STAIR_F1 = Vec3(47, 1, 13)
-STAIR_F2 = Vec3(47, 11, 13)
-
-# ── Lobby improvements (Change 5) ──────────────────────
-# Carpet zone under lobby seating
-floor1_entities.append(box((8, Y1+0.31, 10), (20, 0.04, 12), C(70,50,110)))
-
-# Wall windows (north wall, lobby side) - 3 window frames
-for wx in (5, 12, 19):
-    floor1_entities += [
-        box((wx, Y1+3.0, 25.5), (3.5, 3.0, 0.12), C(160,190,220)),  # glass
-        box((wx, Y1+3.0, 25.4), (3.7, 3.2, 0.08), C(90,90,120)),    # frame
-    ]
-
-# Reception desk nameplate
-floor1_entities.append(box((12, Y1+1.48, 18.8), (3, 0.15, 0.08), C(220,200,255)))
-
-# Odoo logo area above reception (purple bar with lighter center)
-floor1_entities += [
-    box((12, Y1+2.8, 25.65), (9,  1.2, 0.1), PURPLE),
-    box((12, Y1+2.8, 25.60), (5,  0.7, 0.08), C(140,80,220)),
-]
-
-# Reception computer
-floor1_entities += [
-    box((12, Y1+1.55, 19.5), (0.7,0.4,0.05), C(20,20,30)),
-    box((12, Y1+1.55, 19.48),(0.58,0.3,0.04),C(40,80,150)),
-]
-
-# Extra plants (potted, lobby corners)
-for px, pz in ((1,1),(23,1),(1,24),(23,24)):
-    floor1_entities += [
-        box((px, Y1+0.5, pz), (0.8,0.8,0.8), C(80,55,30), True),  # pot
-        box((px, Y1+1.2, pz), (0.6,0.9,0.6), C(30,110,30)),         # plant
-        box((px, Y1+1.6, pz+0.3),(0.3,0.5,0.3),C(40,130,40)),
-    ]
-
-# Lobby columns
-for cx_col in (4, 10, 16, 21):
-    floor1_entities += [
-        box((cx_col, Y1+3.0, 4),   (0.5, 6.0, 0.5), C(90,90,120), True),
-        box((cx_col, Y1+0.45, 4),  (0.7, 0.25, 0.7),C(110,110,140)),  # base
-        box((cx_col, Y1+5.85, 4),  (0.7, 0.25, 0.7),C(110,110,140)),  # capital
-    ]
-
-# Lobby tile floor pattern (checker-like strips)
-for tz in range(0, 26, 4):
-    floor1_entities.append(box((12, Y1+0.32, tz+1), (24, 0.03, 1.8), C(65,65,85)))
-
-# Staircase sign
-floor1_entities += [
-    box((46, Y1+4.0, 13), (2.5, 1.0, 0.1), C(50,50,80)),
-    box((46, Y1+4.0, 13), (2.0, 0.7, 0.08), PURPLE),
-]
-
-# Exit door glow frame (always visible, brightens at evening)
-floor1_entities += [
-    box((12, Y1+1.5, 0.3), (2.0, 2.8, 0.08), C(80,55,25)),   # door frame
-]
-
-# ── Cafeteria improvements (Change 6) ──────────────────
-# Cafeteria wall menu board
-floor1_entities += [
-    box((38, Y1+4.0, 25.6), (14, 2.5, 0.1), C(40,60,40)),   # green chalkboard
-    box((38, Y1+4.0, 25.5), (12, 2.0, 0.08), C(55,80,55)),   # inner
-]
-# Cafeteria serving station shelves
-for sx in (31, 35, 39, 43):
-    floor1_entities.append(box((sx, Y1+2.0, 23.8), (2.5, 0.08, 0.6), C(140,100,60)))
-
-# Trash bin near exit of cafeteria
-floor1_entities.append(box((26, Y1+0.6, 3), (0.5,1.0,0.5), C(50,60,50), True))
-
-# ════════════════════════════════════════════════════
-# FLOOR 2: DEPARTMENTS  (y=10)
-# ════════════════════════════════════════════════════
-Y2 = 10
-make_room(0, Y2, 0, 56, 26, 6, C(42,45,58), C(58,62,78), C(90,95,115), group=floor2_entities)
-
-# Fix 1: extra invisible solid safety floor after make_room
-floor2_entities.append(box((28, Y2+0.5, 13), (56, 0.2, 26), C(0,0,0,0), True))
-
-for ox, col in ((0,C(45,52,78)),(14,C(42,62,65)),(28,C(62,55,45)),(42,C(55,45,70))):
-    floor2_entities.append(box((ox+7, Y2+0.32, 13),(14,.06,26),col))
-
-for name, ox in [('SALES',0),('BSA',14),('FSS',28),('HR',42)]:
-    floor2_entities.append(box((ox+7, Y2+3.8, 0.25),(10,.45,.1), PURPLE))
-
-for dx in (14, 28, 42):
-    floor2_entities.append(box((dx, Y2+1.5, 13), (.2, 3, 20), C(130,140,160,.5)))
-
-for s in range(5):
-    floor2_entities.append(
-        box((47+s*.5, Y2+0.2+s*.7, 13),(1.5,.3+s*.7,1.5),C(150,130,110),True)
-    )
-
-# ── Better desks (Change 3) ──────────────────────────
-def make_desk(x, z, y=Y2, empty=False, group=None):
-    desk_col = C(90,65,35) if empty else C(130,95,50)
-    ents = []
-    # desktop surface
-    ents.append(box((x, y+0.78, z), (2.1, 0.08, 1.1), desk_col, True))
-    # desk legs (4 corners)
-    for lx, lz in ((-0.9,-0.4),(0.9,-0.4),(-0.9,0.4),(0.9,0.4)):
-        ents.append(box((x+lx, y+0.38, z+lz), (0.1,0.76,0.1), C(70,50,25), True))
-    if not empty:
-        # monitor stand
-        ents.append(box((x, y+0.84, z+0.35), (0.08,0.28,0.08), C(40,40,40)))
-        # monitor screen (dark with blue glow tint)
-        ents.append(box((x, y+1.22, z+0.38), (0.85,0.5,0.06), C(20,20,35)))
-        # screen glow (slightly lighter blue inner)
-        ents.append(box((x, y+1.22, z+0.36), (0.72,0.38,0.04), C(40,80,160)))
-        # keyboard
-        ents.append(box((x, y+0.82, z-0.05), (0.8,0.03,0.35), C(60,60,65)))
-        # mouse
-        ents.append(box((x+0.55, y+0.82, z+0.05), (0.12,0.03,0.2), C(50,50,55)))
-        # coffee mug
-        ents.append(box((x-0.7, y+0.9, z+0.2), (0.15,0.22,0.15), C(200,80,40)))
-        # mug top (darker opening)
-        ents.append(box((x-0.7, y+1.01, z+0.2), (0.13,0.04,0.13), C(30,15,5)))
-        # chair
-        ents.append(box((x, y+0.42, z-0.65), (0.75, 0.07, 0.7), C(45,45,55), True))
-        ents.append(box((x, y+0.82, z-0.95), (0.75, 0.65, 0.08), C(45,45,55)))
-        # chair legs
-        for clx, clz in ((-0.3,-0.25),(0.3,-0.25),(-0.3,0.25),(0.3,0.25)):
-            ents.append(box((x+clx, y+0.18, z-0.65+clz),(0.07,0.42,0.07),C(60,60,70),True))
-    else:
-        # empty desk: blank mousepad, no monitor
-        ents.append(box((x, y+0.82, z-0.05), (1.5,0.03,0.75), C(210,210,220)))
-        # still has a chair
-        ents.append(box((x, y+0.42, z-0.65), (0.75,0.07,0.7), C(45,45,55), True))
-        ents.append(box((x, y+0.82, z-0.95), (0.75,0.65,0.08), C(45,45,55)))
-        for clx, clz in ((-0.3,-0.25),(0.3,-0.25),(-0.3,0.25),(0.3,0.25)):
-            ents.append(box((x+clx, y+0.18, z-0.65+clz),(0.07,0.42,0.07),C(60,60,70),True))
-    if group is not None:
-        group.extend(ents)
-    return ents
-
-# ── Better manager area (Change 8) ───────────────────
-def make_manager_area(ox, y=Y2, group=None):
-    cx = ox + 7
-    ents = [
-        # glass partition walls (slightly tinted)
-        box((cx,     y+2.0, 22.5), (11.5, 3.5, 0.15), C(180,200,230, 0.4)),
-        box((ox+0.8, y+2.0, 20.5), (0.15, 3.5, 4.5),  C(180,200,230, 0.4)),
-        box((ox+13.2,y+2.0, 20.5), (0.15, 3.5, 4.5),  C(180,200,230, 0.4)),
-        # carpet inside manager area
-        box((cx, y+0.33, 21.5),(11, 0.05, 6), C(80,60,100)),
-    ]
-    ents += make_desk(cx, 21, y)
-    if group is not None:
-        group.extend(ents)
-
-DESK_ROWS = [(2,6),(6,6),(10,6),(2,13),(6,13)]
-EMPTY_DESK = (10,13)
-
-# Player desk positions per dept
-PLAYER_DESK_POS = {
-    'Sales': Vec3(10,  Y2+1.5, 13),
-    'BSA':   Vec3(24,  Y2+1.5, 13),
-    'FSS':   Vec3(38,  Y2+1.5, 13),
-    'HR':    Vec3(52,  Y2+1.5, 13),
-}
-DEPT_OX = {'Sales':0,'BSA':14,'FSS':28,'HR':42}
-
-for dept, dept_ox in DEPT_OX.items():
-    for (lx, lz) in DESK_ROWS:
-        make_desk(dept_ox+lx, lz, group=floor2_entities)
-    make_desk(dept_ox + EMPTY_DESK[0], EMPTY_DESK[1], empty=True, group=floor2_entities)
-    make_manager_area(dept_ox, group=floor2_entities)
-
-# Floor 2 columns at dept boundaries
-for cx_col in (0, 14, 28, 42, 56):
-    for cz_col in (1, 13, 25):
-        floor2_entities += [
-            box((cx_col, Y2+3.0, cz_col),(0.5,6.0,0.5), C(75,80,100), True),
-            box((cx_col, Y2+0.5, cz_col),(0.7,0.3,0.7), C(90,95,120)),
-            box((cx_col, Y2+5.8, cz_col),(0.7,0.3,0.7), C(90,95,120)),
-        ]
-
-# Floor tile strips on floor 2
-for tz in range(0, 26, 4):
-    floor2_entities.append(box((28, Y2+0.34, tz+1),(56, 0.03, 1.8), C(50,52,68)))
-
-# ── Dept improvements (Change 7) ─────────────────────
-# Wall-mounted screens above each dept sign (large monitor look)
-for ox, dcol in ((0,DEPT_COL['Sales']),(14,DEPT_COL['BSA']),(28,DEPT_COL['FSS']),(42,DEPT_COL['HR'])):
-    floor2_entities += [
-        box((ox+7, Y2+4.5, 0.3), (11, 2.2, 0.12), C(20,20,30)),   # screen bezel
-        box((ox+7, Y2+4.5, 0.25),(9.5,1.7, 0.08), dcol),            # screen content (dept color)
-    ]
-
-# Desk lamps on manager desks
-for ox in (0, 14, 28, 42):
-    cx = ox + 7
-    floor2_entities += [
-        box((cx+0.7, Y2+0.88, 21.3),(0.06,0.5,0.06), C(180,180,180)),  # lamp post
-        box((cx+0.7, Y2+1.15, 21.2),(0.3,0.08,0.25), C(255,240,180)),  # lamp shade
-    ]
-
-# Whiteboard on back wall (manager area) per dept
-for ox in (0, 14, 28, 42):
-    floor2_entities += [
-        box((ox+7, Y2+3.5, 25.6),(10, 2.5, 0.12), C(240,240,245)),  # whiteboard
-        box((ox+7, Y2+3.5, 25.5),( 9, 2.2, 0.08), C(255,255,255)),  # surface
-    ]
-
-# ════════════════════════════════════════════════════
-# HOME MAP  (small apartment)
-# ════════════════════════════════════════════════════
-HX, HY, HZ = 200, 0, 0   # offset so it doesn't overlap
-
 make_room(HX, HY, HZ, 16, 12, 4, C(200,190,170), C(180,170,150), C(230,220,200),
           accent=False, group=home_entities)
 
-# ── Home improvements (Change 9) ─────────────────────
 # Rug
 home_entities.append(box((HX+8, HY+0.32, HZ+7), (10, 0.04, 7), C(140,80,80)))
 
@@ -472,7 +577,6 @@ BX, BY, BZ = 300, 0, 0
 make_room(BX, BY, BZ, 24, 16, 4, C(30,20,15), C(50,35,20), C(60,45,30),
           accent=False, group=bar_entities)
 
-# ── Bar improvements (Change 10) ─────────────────────
 # Mood lighting strips along top of walls
 for bz_pos in (BZ+0.3, BZ+15.7):
     bar_entities.append(box((BX+12, BY+3.7, bz_pos),(22,0.2,0.15),C(180,20,80)))
@@ -537,7 +641,6 @@ bar_entities += [
 npcs = []
 bar_npcs = []   # subset currently at bar
 
-# ── Better NPC bodies (Change 2) ─────────────────────
 def spawn_npc(name, role, dept, x, z, y, dialogue, relationship=False):
     pos = Vec3(x, y+1.0, z)
     col = MGR_COL if 'Manager' in role else DEPT_COL[dept]
@@ -566,31 +669,31 @@ def spawn_npc(name, role, dept, x, z, y, dialogue, relationship=False):
         'parts': [body, head, eye_l, eye_r, leg_l, leg_r, arm_l, arm_r],
     }
     npcs.append(data)
-    floor2_entities.extend([body, head, eye_l, eye_r, leg_l, leg_r, arm_l, arm_r])
+    office_entities.extend([body, head, eye_l, eye_r, leg_l, leg_r, arm_l, arm_r])
     return data
 
 # ── SALES ────────────────────────────────────────────
-spawn_npc('Alex Kim',    'Sales Rep',     'Sales',  2,  6, Y2,
+spawn_npc('Alex Kim',    'Sales Rep',    'Sales',  3,  22, Y0,
     {0:["Hey! Quota is looking great this month."]})
-spawn_npc('Mia Torres',  'Sales Rep',     'Sales',  6,  6, Y2,
+spawn_npc('Mia Torres',  'Sales Rep',    'Sales',  7,  22, Y0,
     {0:["Hi, welcome to the team!"],
      1:["Good to see you again. Settling in?","Feel free to ask me anything."],
      2:["You're getting the hang of it!","Pro tip: always CC your manager."],
      3:["Honestly, you're one of the good ones.","I know the pipeline inside-out."],
      4:["We should grab lunch sometime.","I've got your back on that project."]},
     True)
-spawn_npc('Jake Osei',   'Sales Rep',     'Sales', 10,  6, Y2,
+spawn_npc('Jake Osei',   'Sales Rep',    'Sales', 11,  22, Y0,
     {0:["Closing deals, one at a time."]})
-spawn_npc('Priya Nair',  'Sales Rep',     'Sales',  2, 13, Y2,
+spawn_npc('Priya Nair',  'Sales Rep',    'Sales',  3,  28, Y0,
     {0:["Sales dashboards are honestly beautiful."],
      1:["Hit me up if you want tips on clients.","I track every metric religiously."],
      2:["Our close rate is up this quarter!","Check the CRM for the latest leads."],
      3:["You remind me of myself starting out.","Here's how I manage my pipeline..."],
      4:["You're basically part of my squad now.","Let's strategize on that big account."]},
     True)
-spawn_npc('Leo Chan',    'Sales Rep',     'Sales',  6, 13, Y2,
+spawn_npc('Leo Chan',    'Sales Rep',    'Sales',  7,  28, Y0,
     {0:["Running late on a follow-up, brb."]})
-spawn_npc('Sandra Bloom','Sales Manager', 'Sales',  7, 21, Y2,
+spawn_npc('Sandra Bloom','Sales Manager','Sales',  8.5,33, Y0,
     {0:["Welcome to the Sales team!"],
      1:["Let me know if you need anything.","Numbers are looking good."],
      2:["I see potential in you.","Keep those conversion rates up."],
@@ -599,27 +702,27 @@ spawn_npc('Sandra Bloom','Sales Manager', 'Sales',  7, 21, Y2,
     True)
 
 # ── BSA ──────────────────────────────────────────────
-spawn_npc('Ravi Patel',  'Business Analyst','BSA', 16,  6, Y2,
+spawn_npc('Ravi Patel',  'Business Analyst','BSA', 21, 22, Y0,
     {0:["Documentation never sleeps."]})
-spawn_npc('Chloe Martin','Business Analyst','BSA', 20,  6, Y2,
+spawn_npc('Chloe Martin','Business Analyst','BSA', 25, 22, Y0,
     {0:["Requirements gathering is an art."],
      1:["Want to review a spec together?","I love a good flowchart."],
      2:["You write clean requirements.","Let me share my template with you."],
      3:["We work really well together.","Here's how I handle scope creep..."],
      4:["You're my go-to for workshops now.","We should co-author the next spec."]},
     True)
-spawn_npc('Tom Reyes',   'Business Analyst','BSA', 24,  6, Y2,
+spawn_npc('Tom Reyes',   'Business Analyst','BSA', 29, 22, Y0,
     {0:["Gap analysis? On it."]})
-spawn_npc('Sara Wolfe',  'Business Analyst','BSA', 16, 13, Y2,
+spawn_npc('Sara Wolfe',  'Business Analyst','BSA', 21, 28, Y0,
     {0:["I live in spreadsheets."],
      1:["Let me know if you need a process mapped.","Excel is my second language."],
      2:["Your process diagrams are great.","I'll teach you my BPMN shortcuts."],
      3:["I can always count on your analysis.","Here's the stakeholder map I use..."],
      4:["We make a great analytical team.","I'll put you on my next workshop."]},
     True)
-spawn_npc('Ben Foster',  'Business Analyst','BSA', 20, 13, Y2,
+spawn_npc('Ben Foster',  'Business Analyst','BSA', 25, 28, Y0,
     {0:["User stories are my love language."]})
-spawn_npc('Diana Cross', 'BSA Manager',    'BSA', 21, 21, Y2,
+spawn_npc('Diana Cross', 'BSA Manager',    'BSA', 26, 33, Y0,
     {0:["Welcome to the BSA floor!"],
      1:["We keep things structured here.","Any questions, just ask."],
      2:["Your documentation is getting better.","I appreciate your thoroughness."],
@@ -628,27 +731,27 @@ spawn_npc('Diana Cross', 'BSA Manager',    'BSA', 21, 21, Y2,
     True)
 
 # ── FSS ──────────────────────────────────────────────
-spawn_npc('Nina Park',   'Functional Support','FSS', 30,  6, Y2,
+spawn_npc('Nina Park',  'Functional Support','FSS', 38, 22, Y0,
     {0:["Ticket resolved. Next!"]})
-spawn_npc('Omar Diaz',   'Functional Support','FSS', 34,  6, Y2,
+spawn_npc('Omar Diaz',  'Functional Support','FSS', 42, 22, Y0,
     {0:["I know Odoo modules like the back of my hand."],
      1:["Need help with a feature? I got you.","Every module has its quirks."],
      2:["You're picking up Odoo fast.","Here's a hidden config trick..."],
      3:["I trust your instincts on support cases.","Let me walk you through the APIs."],
      4:["You're basically an Odoo expert now.","Let's tackle that complex ticket together."]},
     True)
-spawn_npc('Yuki Abe',    'Functional Support','FSS', 38,  6, Y2,
+spawn_npc('Yuki Abe',   'Functional Support','FSS', 46, 22, Y0,
     {0:["Config or customization? That is the question."]})
-spawn_npc('Finn Kelly',  'Functional Support','FSS', 30, 13, Y2,
+spawn_npc('Finn Kelly', 'Functional Support','FSS', 38, 28, Y0,
     {0:["Just fixed something I did not know was broken."],
      1:["Ping me if you get stuck.","I've seen every error code twice."],
      2:["You debug like a pro.","Here's how I reproduce tricky bugs..."],
      3:["We make a good support duo.","I'll loop you in on the hard tickets."],
      4:["Honestly you're the best on the team.","Let's write a guide together."]},
     True)
-spawn_npc('Ana Silva',   'Functional Support','FSS', 34, 13, Y2,
+spawn_npc('Ana Silva',  'Functional Support','FSS', 42, 28, Y0,
     {0:["Functional support is honestly underrated."]})
-spawn_npc('Marcus Reid', 'Support Manager',  'FSS', 35, 21, Y2,
+spawn_npc('Marcus Reid','Support Manager',  'FSS', 43.5,33,Y0,
     {0:["Hey, welcome to FSS!"],
      1:["We move fast here.","Proud of this team."],
      2:["Your response times are great.","Keep that SLA green."],
@@ -657,7 +760,7 @@ spawn_npc('Marcus Reid', 'Support Manager',  'FSS', 35, 21, Y2,
     True)
 
 # ── HR ───────────────────────────────────────────────
-spawn_npc('Grace Tan',   'HR Manager',    'HR',   49, 21, Y2,
+spawn_npc('Grace Tan',  'HR Manager',    'HR',  60.5,26, Y0,
     {0:["Welcome to Odoo!"],
      1:["How are you settling in?","Open door — always here."],
      2:["Let me know if you need anything from HR.","We care about culture here."],
@@ -676,66 +779,140 @@ player = FirstPersonController(position=SPAWN['floor1'],
 player.camera_pivot.y = 1.5
 
 # ════════════════════════════════════════════════════
-# HUD
+# HUD  — clean corporate top bar
 # ════════════════════════════════════════════════════
-# ── HUD Panels ───────────────────────────────────────
-_hud_bg_stats = Entity(parent=camera.ui, model='quad',
-                        scale=(.72,.065), position=(-.49,.455),
-                        color=C(10,8,20,210), z=0)
-_hud_bg_clock = Entity(parent=camera.ui, model='quad',
-                        scale=(.28,.065), position=(.72,.455),
-                        color=C(10,8,20,210), z=0)
-_hud_bg_floor = Entity(parent=camera.ui, model='quad',
-                        scale=(.18,.04), position=(-.81,.41),
-                        color=C(80,40,140,180), z=0)
+_BAR_Y   = 0.455   # vertical centre of top bar
+_BAR_H   = 0.090   # bar height
 
-hud_stats = Text(text='', position=(-0.84, 0.47), origin=(-0.5, 0.5),
-                 scale=1.25, color=Color(1,1,1,1))
-hud_clock = Text(text='', position=(0.84, 0.47), origin=(0.5, 0.5),
-                 scale=1.25, color=Color(1,1,0.7,1))
-hud_hint  = Text(text='', position=(0, -0.38), origin=(0,0),
-                 scale=1.6, color=Color(1,1,0.3,1), background=True, visible=False)
-hud_keys  = Text(text='WASD Move  |  Mouse Look  |  E Interact  |  Q Quit',
-                 position=(0,-0.47), origin=(0,0), scale=1.1,
-                 color=Color(0.7,0.7,0.7,1), background=True)
-hud_floor = Text(text='', position=(-0.84, 0.41), origin=(-0.5, 0.5),
-                 scale=1.1, color=Color(180/255,100/255,255/255,1))
+# Full-width dark background
+Entity(parent=camera.ui, model='quad',
+       scale=(2.0, _BAR_H), position=(0, _BAR_Y),
+       color=C(10, 8, 22, 228), z=1)
+# Thin purple rule at very top
+Entity(parent=camera.ui, model='quad',
+       scale=(2.0, 0.004), position=(0, _BAR_Y + _BAR_H/2 - 0.002),
+       color=PURPLE, z=0)
+# Thin separator at bottom of bar
+Entity(parent=camera.ui, model='quad',
+       scale=(2.0, 0.002), position=(0, _BAR_Y - _BAR_H/2 + 0.001),
+       color=C(50, 40, 80, 180), z=0)
 
-# Stat bar entities (mood=pink, energy=green, money=gold, xp=blue)
-_bar_w = 0.055
-_bar_h = 0.012
-_bar_y = 0.442
-_bar_x0 = -0.83
-_bars = {}
-for bname, bx, bcol in [
-    ('mood',   _bar_x0+0.00, C(220,80,120)),
-    ('energy', _bar_x0+0.19, C(60,200,100)),
-]:
-    bg = Entity(parent=camera.ui, model='quad',
-                scale=(_bar_w, _bar_h), position=(bx+_bar_w/2, _bar_y),
-                color=C(30,30,30,180), z=0)
-    fill = Entity(parent=camera.ui, model='quad',
-                  scale=(_bar_w, _bar_h), position=(bx+_bar_w/2, _bar_y),
-                  color=bcol, z=-0.1)
-    _bars[bname] = (bx, fill, _bar_w)
+# ── Left: MOOD bar ──────────────────────────────────
+_ML = -0.87   # mood left edge
+Text(text='MOOD', parent=camera.ui,
+     position=(_ML, _BAR_Y+0.018), origin=(-0.5,0),
+     scale=1.05, color=C(200,100,130,255))
+Entity(parent=camera.ui, model='quad',          # track
+       scale=(0.095, 0.011), position=(_ML+0.0475, _BAR_Y+0.001),
+       color=C(35,20,30,200), z=0)
+_mood_fill = Entity(parent=camera.ui, model='quad',
+                    scale=(0.095, 0.011), position=(_ML+0.0475, _BAR_Y+0.001),
+                    color=C(210,65,105), z=-0.1)
+_mood_val = Text(text='', parent=camera.ui,
+                 position=(_ML+0.103, _BAR_Y+0.018), origin=(-0.5,0),
+                 scale=1.15, color=Color(1,1,1,1))
+
+# Vertical divider
+Entity(parent=camera.ui, model='quad',
+       scale=(0.002, 0.062), position=(-0.73, _BAR_Y),
+       color=C(55,45,85,180), z=0)
+
+# ── ENERGY bar ──────────────────────────────────────
+_EL = -0.72
+Text(text='ENERGY', parent=camera.ui,
+     position=(_EL, _BAR_Y+0.018), origin=(-0.5,0),
+     scale=1.05, color=C(80,190,120,255))
+Entity(parent=camera.ui, model='quad',
+       scale=(0.095, 0.011), position=(_EL+0.0475, _BAR_Y+0.001),
+       color=C(20,32,24,200), z=0)
+_energy_fill = Entity(parent=camera.ui, model='quad',
+                      scale=(0.095, 0.011), position=(_EL+0.0475, _BAR_Y+0.001),
+                      color=C(50,190,100), z=-0.1)
+_energy_val = Text(text='', parent=camera.ui,
+                   position=(_EL+0.103, _BAR_Y+0.018), origin=(-0.5,0),
+                   scale=1.15, color=Color(1,1,1,1))
+
+# Vertical divider
+Entity(parent=camera.ui, model='quad',
+       scale=(0.002, 0.062), position=(-0.565, _BAR_Y),
+       color=C(55,45,85,180), z=0)
+
+# ── Centre: name / money / xp / level ───────────────
+_CX = -0.545
+hud_name_txt = Text(text='', parent=camera.ui,
+                    position=(_CX, _BAR_Y+0.018), origin=(-0.5,0),
+                    scale=1.35, color=Color(1,1,1,1))
+hud_money_xp = Text(text='', parent=camera.ui,
+                    position=(_CX, _BAR_Y+0.000), origin=(-0.5,0),
+                    scale=1.1, color=C(220,185,60,255))
+
+# Vertical divider right of centre
+Entity(parent=camera.ui, model='quad',
+       scale=(0.002, 0.062), position=(0.42, _BAR_Y),
+       color=C(55,45,85,180), z=0)
+
+# ── Right: clock + location ──────────────────────────
+hud_clock = Text(text='', parent=camera.ui,
+                 position=(0.87, _BAR_Y+0.018), origin=(0.5,0),
+                 scale=1.3, color=Color(1,1,0.75,1))
+hud_floor = Text(text='', parent=camera.ui,
+                 position=(0.87, _BAR_Y+0.000), origin=(0.5,0),
+                 scale=1.1, color=C(160,135,210,255))
+
+# ── Bottom hint ──────────────────────────────────────
+_hint_bg = Entity(parent=camera.ui, model='quad',
+                  scale=(0.60, 0.044), position=(0, -0.40),
+                  color=C(10,8,22,210), z=1, visible=False)
+Entity(parent=_hint_bg, model='quad',          # left accent bar
+       scale=(0.012, 1.0), position=(-0.494, 0),
+       color=PURPLE, z=-0.1)
+hud_hint = Text(text='', parent=camera.ui,
+                position=(0, -0.400), origin=(0,0),
+                scale=1.5, color=Color(1,1,1,1), visible=False)
+
+hud_keys = Text(text='WASD  Move   |   Mouse  Look   |   E  Interact   |   Q  Quit',
+                position=(0, -0.465), origin=(0,0), scale=1.05,
+                color=Color(0.45,0.45,0.55,1))
+
+# kept for legacy refs (unused visually now)
+hud_stats = Text(text='', visible=False)
+
+def _set_bar(fill_ent, left_x, bar_w, val_0_1):
+    w = max(0.001, bar_w * val_0_1)
+    fill_ent.scale_x = w
+    fill_ent.x       = left_x + w / 2
+
+def _get_room(pos):
+    x, z = pos.x, pos.z
+    if 12 <= z <= 16: return 'Corridor'
+    if z < 12:
+        if  0 <= x <= 20: return 'Lobby'
+        if 21 <= x <= 43: return 'Cafeteria'
+        if 44 <= x <= 62: return 'Break Room'
+    if z > 16:
+        if  0 <= x <= 17: return 'Sales'
+        if 18 <= x <= 34: return 'BSA'
+        if 35 <= x <= 52: return 'FSS'
+        if 53 <= x <= 68: return 'HR'
+    return 'Office'
 
 def update_hud():
     lvl   = stats['level']
     title = LEVEL_TITLES[lvl]
-    # Update stat fill bars
-    for bname, (bx, fill, bw) in _bars.items():
-        val   = stats[bname] / 100
-        fill.scale_x = max(0.001, bw * val)
-        fill.x       = bx + (bw * val) / 2
-    hud_stats.text = (f"Mood {stats['mood']}   Energy {stats['energy']}   "
-                      f"${stats['money']}   {stats['xp']}xp  Lv{lvl} {title}")
-    h = int(hour)
-    m = int((hour - h) * 60)
+    _set_bar(_mood_fill,   _ML, 0.095, stats['mood']   / 100)
+    _set_bar(_energy_fill, _EL, 0.095, stats['energy'] / 100)
+    _mood_val.text   = str(stats['mood'])
+    _energy_val.text = str(stats['energy'])
+    hud_name_txt.text = f"{stats['name']}  —  Lv{lvl} {title}"
+    hud_money_xp.text = f"${stats['money']}    {stats['xp']} xp"
+    h    = int(hour)
+    m    = int((hour - h) * 60)
     ampm = 'AM' if h < 12 else 'PM'
     h12  = h % 12 or 12
     dow  = day_names[(day-1) % 7]
-    hud_clock.text = f"{h12}:{m:02d} {ampm}  Day {day} {dow}"
-    hud_floor.text = ('Floor 1' if current_floor==1 else 'Floor 2') if game_state in ('work','evening') else game_state.upper()
+    hud_clock.text = f"{h12}:{m:02d} {ampm}   Day {day} {dow}"
+    loc = _get_room(player.position) if game_state in ('work','evening') else game_state.capitalize()
+    hud_floor.text = loc
 
 def check_level_up():
     for lvl in (2, 3, 4):
@@ -753,7 +930,6 @@ nearest_npc        = None
 phone_menu_open    = False
 phone_panel        = None
 near_exit          = False
-near_stairs        = False
 near_bed           = False
 near_phone         = False
 near_home_door     = False
@@ -761,16 +937,28 @@ near_bar_counter   = False
 near_bar_door      = False
 near_cafeteria     = False
 near_player_desk   = False
+near_coffee        = False
+near_vending       = False
+near_couch_break   = False
 
 def show_notification(msg, duration=3.0):
     global notification_panel
     if notification_panel:
         destroy(notification_panel)
     notification_panel = Entity(parent=camera.ui, model='quad',
-                                scale=(.7,.12), position=(0,.2),
-                                color=C(20,20,40,230), z=-1)
+                                scale=(.62, .058), position=(0, .22),
+                                color=C(10, 8, 22, 235), z=-1)
+    # Left accent bar
+    Entity(parent=notification_panel, model='quad',
+           scale=(0.014, 1.0), position=(-0.493, 0),
+           color=PURPLE, z=-0.1)
+    # Bottom rule
+    Entity(parent=notification_panel, model='quad',
+           scale=(1.0, 0.04), position=(0, -0.48),
+           color=PURPLE, z=-0.1)
     Text(parent=notification_panel, text=msg,
-         position=(0,0), origin=(0,0), scale=2.0, color=Color(1,1,0.5,1))
+         position=(0.01, 0), origin=(0, 0), scale=1.85,
+         color=Color(1, 1, 1, 1))
     invoke(lambda: destroy(notification_panel) if notification_panel else None,
            delay=duration)
 
@@ -783,7 +971,7 @@ def open_dialogue(npc):
     dialogue_open = True
     mouse.locked  = False
     mouse.visible = True
-    hud_hint.visible = False
+    hud_hint.visible = False; _hint_bg.visible = False
 
     lvl  = friendship.get(npc['name'], 0)
     dial = npc['dialogue']
@@ -796,32 +984,54 @@ def open_dialogue(npc):
         stats['mood'] = min(100, stats['mood'] + 3)
 
     dept_col = DEPT_COL.get(npc['dept'], PURPLE)
-    rel_tag  = f"  {hearts(npc['name'])}" if npc['relationship'] else ''
+    # panel: 0.84 wide, 0.34 tall — portrait on left, content on right
     dialogue_panel = Entity(parent=camera.ui, model='quad',
-                            scale=(.82,.36), position=(0,-.14),
-                            color=C(8,6,22,240), z=-1)
-    # Coloured dept stripe at top
+                            scale=(.84, .34), position=(0, -.15),
+                            color=C(10, 8, 22, 245), z=-1)
+    # Thin purple rule at top
     Entity(parent=dialogue_panel, model='quad',
-           scale=(1, 0.1), position=(0, 0.46),
+           scale=(1.0, 0.012), position=(0, 0.494),
+           color=PURPLE, z=-0.1)
+    # ── Portrait block (left 22% of panel) ──────────
+    Entity(parent=dialogue_panel, model='quad',
+           scale=(0.22, 1.0), position=(-0.39, 0.0),
            color=dept_col, z=-0.1)
-    Text(parent=dialogue_panel,
-         text=npc['name'], position=(0, .42), origin=(0,0),
-         scale=2.6, color=Color(1,1,1,1))
-    Text(parent=dialogue_panel,
-         text=f"{npc['role']}  |  {npc['dept']}{rel_tag}",
-         position=(0, .30), origin=(0,0), scale=1.6,
-         color=Color(180/255,140/255,255/255,1))
-    # Divider line
+    # dept colour inner shadow
     Entity(parent=dialogue_panel, model='quad',
-           scale=(0.9, 0.008), position=(0, 0.22),
-           color=C(80,60,120,200), z=-0.1)
+           scale=(0.19, 0.96), position=(-0.39, 0.0),
+           color=C(int(dept_col.r*200), int(dept_col.g*200), int(dept_col.b*200), 60), z=-0.2)
+    # Initial letter
     Text(parent=dialogue_panel,
-         text=f'"{line}"', position=(0, .04), origin=(0,0),
-         scale=2.1, color=Color(1,1,1,1))
+         text=npc['name'][0], position=(-0.39, 0.10), origin=(0,0),
+         scale=6.0, color=Color(1,1,1,0.95))
+    # Dept label at bottom of portrait
     Text(parent=dialogue_panel,
-         text='[ E ] Close',
-         position=(0, -.42), origin=(0,0),
-         scale=1.5, color=Color(.5,.5,.6,1))
+         text=npc['dept'], position=(-0.39, -0.36), origin=(0,0),
+         scale=1.4, color=Color(1,1,1,0.75))
+    # ── Content (right side, x from -0.25 to +0.48) ─
+    CX = -0.24   # left-align anchor for content
+    Text(parent=dialogue_panel,
+         text=npc['name'], position=(CX, 0.32), origin=(-0.5, 0),
+         scale=2.5, color=Color(1, 1, 1, 1))
+    Text(parent=dialogue_panel,
+         text=npc['role'], position=(CX, 0.15), origin=(-0.5, 0),
+         scale=1.5, color=Color(180/255, 140/255, 255/255, 1))
+    if npc['relationship']:
+        Text(parent=dialogue_panel,
+             text=hearts(npc['name']), position=(CX, 0.02), origin=(-0.5, 0),
+             scale=1.45, color=C(215, 80, 110, 255))
+    # Divider
+    Entity(parent=dialogue_panel, model='quad',
+           scale=(0.68, 0.005), position=(0.12, -0.08),
+           color=C(55, 45, 90, 200), z=-0.1)
+    # Quote
+    Text(parent=dialogue_panel,
+         text=f'"{line}"', position=(CX, -0.22), origin=(-0.5, 0),
+         scale=1.85, color=Color(1, 1, 1, 1))
+    # Close hint
+    Text(parent=dialogue_panel,
+         text='E — Close', position=(0.46, -0.45), origin=(0.5, 0),
+         scale=1.35, color=Color(0.45, 0.45, 0.55, 1))
 
 def close_dialogue():
     global dialogue_open, dialogue_panel
@@ -938,16 +1148,16 @@ def close_phone_menu():
     mouse.visible   = False
 
 # ════════════════════════════════════════════════════
-# MAP VISIBILITY  (Change 12)
+# MAP VISIBILITY
 # ════════════════════════════════════════════════════
 def show_map(name):
-    for group, gname in [(floor1_entities,'floor1'),(floor2_entities,'floor2'),
+    for group, gname in [(office_entities,'office'),
                           (home_entities,'home'),(bar_entities,'bar')]:
-        vis = (gname == name) or (name == 'floor2' and gname == 'floor1')
+        vis = (gname == name)
         for e in group:
             e.enabled = vis
     for n in npcs:
-        vis = (name in ('floor1','floor2'))
+        vis = (name == 'office')
         for part in n.get('parts', [n['body'], n['head']]):
             part.enabled = vis
         n['label'].enabled = vis
@@ -959,8 +1169,8 @@ def go_to_work():
     global game_state, evening_triggered
     game_state        = 'work'
     evening_triggered = False
-    show_map('floor1')
-    player.position   = Vec3(*SPAWN['floor1'])
+    show_map('office')
+    player.position   = Vec3(10, 1.5, 6)
     update_hud()
 
 def trigger_end_of_work():
@@ -1057,9 +1267,10 @@ def nearest_bar_npc():
 _desk_timer = 0.0
 
 def update():
-    global nearest_npc, near_stairs, near_exit, near_bed
+    global nearest_npc, near_exit, near_bed
     global near_phone, near_home_door, near_bar_counter, near_bar_door
-    global near_cafeteria, near_player_desk, _desk_timer, current_floor
+    global near_cafeteria, near_player_desk, _desk_timer
+    global near_coffee, near_vending, near_couch_break
     global hour
 
     p = player.position
@@ -1078,17 +1289,12 @@ def update():
         if sitting_at_desk:
             stats['energy'] = max(0, stats['energy'] - time.dt * (2/3600) * TIME_SPEED)
 
-    # Floor detection (work state)
-    if game_state in ('work','evening'):
-        current_floor = 2 if p.y > 6 else 1
-
     if dialogue_open or task_active or phone_menu_open:
-        hud_hint.visible = False
+        hud_hint.visible = False; _hint_bg.visible = False
         return
 
     # ── Proximity checks ─────────────────────────────
     near_exit        = False
-    near_stairs      = False
     near_bed         = False
     near_phone       = False
     near_home_door   = False
@@ -1096,6 +1302,9 @@ def update():
     near_bar_door    = False
     near_cafeteria   = False
     near_player_desk = False
+    near_coffee      = False
+    near_vending     = False
+    near_couch_break = False
     nearest_npc      = None
 
     # NPC proximity (work floors)
@@ -1106,18 +1315,20 @@ def update():
             if d < best_d:
                 best_d, nearest_npc = d, npc
 
-        near_stairs = (p - STAIR_F1).length() < 3 or (p - STAIR_F2).length() < 3
-
         if game_state == 'evening':
             near_exit = (p - EXIT_DOOR_POS).length() < 2.5
 
-        if game_state == 'work' and current_floor == 2:
+        if game_state == 'work':
             desk_pos = PLAYER_DESK_POS.get(stats['dept'])
             if desk_pos and (p - desk_pos).length() < 2.5:
                 near_player_desk = True
 
-        if current_floor == 1:
-            near_cafeteria = (p - CAFETERIA_POS).length() < 3.0
+        near_cafeteria = (p - CAFETERIA_POS).length() < 3.0
+
+        if game_state == 'work':
+            near_coffee      = (p - COFFEE_POS).length()  < 2.5
+            near_vending     = (p - VENDING_POS).length() < 2.5
+            near_couch_break = (p - COUCH_POS).length()   < 2.5
 
     if game_state == 'home':
         near_bed      = (p - BED_POS).length()       < 2.5
@@ -1144,13 +1355,16 @@ def update():
         hint = f"[ E ] Talk to {nearest_npc['name']}"
     elif near_exit:
         hint = '[ E ] Exit to Home'
-    elif near_stairs:
-        dest = 'Floor 1' if current_floor == 2 else 'Floor 2'
-        hint = f'[ E ] Go to {dest}'
     elif near_player_desk:
         hint = '[ E ] Sit at your desk' if not sitting_at_desk else '[ E ] Stand up'
     elif near_cafeteria:
         hint = '[ E ] Buy lunch (+20 energy, -$5)'
+    elif near_coffee:
+        hint = '[ E ] Get coffee (+20 energy, -$3)'
+    elif near_vending:
+        hint = '[ E ] Vending machine (+15 mood, -$2)'
+    elif near_couch_break:
+        hint = '[ E ] Rest on couch (+25 energy) [risky]'
     elif near_bed:
         hint = '[ E ] Sleep (advance to next work day)'
     elif near_phone:
@@ -1162,8 +1376,9 @@ def update():
     elif near_bar_door:
         hint = '[ E ] Go home'
 
-    hud_hint.text    = hint
-    hud_hint.visible = bool(hint)
+    hud_hint.text      = hint
+    hud_hint.visible   = bool(hint)
+    _hint_bg.visible   = bool(hint)
 
 # ════════════════════════════════════════════════════
 # INPUT HANDLER
@@ -1210,17 +1425,6 @@ def input(key):
         if near_exit and game_state == 'evening':
             go_home(); return
 
-        if near_stairs and game_state in ('work','evening'):
-            if current_floor == 1:
-                player.position = Vec3(47, Y2+5, 13)
-            else:
-                player.position = Vec3(47, Y1+3, 13)
-            # Reset downward momentum so player doesn't clip through floor
-            for attr in ('y_velocity','velocity_y'):
-                if hasattr(player, attr):
-                    setattr(player, attr, 0)
-            return
-
         if near_player_desk and game_state == 'work':
             sitting_at_desk = not sitting_at_desk
             _desk_timer = 0.0
@@ -1228,6 +1432,44 @@ def input(key):
                 dismiss_task()
             player.speed = 0 if sitting_at_desk else 5
             show_notification('Sitting at desk — tasks incoming!' if sitting_at_desk else 'Stood up.')
+            return
+
+        if near_coffee and game_state == 'work':
+            if stats['money'] >= 3:
+                stats['money'] -= 3
+                stats['energy'] = min(100, stats['energy'] + 20)
+                show_notification('Coffee! +20 Energy  -$3')
+            else:
+                show_notification('Not enough money.')
+            return
+
+        if near_vending and game_state == 'work':
+            if stats['money'] >= 2:
+                stats['money'] -= 2
+                stats['mood'] = min(100, stats['mood'] + 15)
+                show_notification('Snack! +15 Mood  -$2')
+            else:
+                show_notification('Not enough money.')
+            return
+
+        if near_couch_break and game_state == 'work':
+            stats['energy'] = min(100, stats['energy'] + 25)
+            # 40% chance of being caught by a manager or HR
+            import random as _r
+            MANAGERS = {
+                'Sales': 'Sandra Bloom', 'BSA': 'Diana Cross',
+                'FSS': 'Marcus Reid',    'HR':  'Grace Tan',
+            }
+            if _r.random() < 0.40:
+                dept_mgr = MANAGERS.get(stats['dept'], 'Sandra Bloom')
+                catchers = list({dept_mgr, 'Grace Tan'})
+                caught_by = _r.choice(catchers)
+                for n in npcs:
+                    if n['name'] == caught_by and n['relationship']:
+                        friendship[caught_by] = max(0, friendship.get(caught_by,0) - 1)
+                show_notification(f'Caught napping by {caught_by}!  -1 relationship', 4.0)
+            else:
+                show_notification('+25 Energy  (nobody saw you)')
             return
 
         if near_cafeteria and game_state == 'work':
@@ -1268,8 +1510,8 @@ player.enabled = False
 mouse.locked   = False
 mouse.visible  = True
 
-# Hide all maps until game starts  (Change 12: use parts loop)
-for e in floor1_entities + floor2_entities + home_entities + bar_entities:
+# Hide all maps until game starts
+for e in office_entities + home_entities + bar_entities:
     e.enabled = False
 for n in npcs:
     for part in n.get('parts', [n['body'], n['head']]):
@@ -1339,8 +1581,8 @@ def start_game():
     destroy(cc_panel)
     player.enabled = True
     game_state = 'work'
-    show_map('floor1')
-    player.position = Vec3(*SPAWN['floor1'])
+    show_map('office')
+    player.position = Vec3(10, 1.5, 6)
     mouse.locked  = True
     mouse.visible = False
     update_hud()
