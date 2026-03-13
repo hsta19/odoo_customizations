@@ -112,18 +112,30 @@ SPAWN = {
 def make_room(ox, oy, oz, w, d, h, fc, wc, cc, accent=True, group=None):
     cx, cz = ox+w/2, oz+d/2
     ents = [
-        box((cx, oy+0.15,  cz), (w, 0.3,  d), fc, True),
+        box((cx, oy+0.15,  cz), (w, 0.3,  d), fc, True),   # visible floor
         box((cx, oy+h+0.15,cz), (w, 0.3,  d), cc),
         box((cx, oy+h/2,   oz), (w, h,  0.3), wc, True),
         box((cx, oy+h/2, oz+d), (w, h,  0.3), wc, True),
         box((ox, oy+h/2,   cz), (0.3, h, d),  wc, True),
         box((ox+w,oy+h/2,  cz), (0.3, h, d),  wc, True),
     ]
+    # Thick invisible collision floor — prevents falling through on teleport
+    thick = Entity(model='cube', position=(cx, oy-2, cz),
+                   scale=(w+1, 5, d+1), collider='box')
+    thick.visible = False
+    ents.append(thick)
     if accent:
         ents.append(box((cx, oy+h-0.3, oz+d-0.2), (w, 0.4, 0.1), PURPLE))
-    # ceiling light strips (two rows)  -- Change 4
+    # Ceiling light strips
     for lz_off in (d*0.3, d*0.7):
         ents.append(box((cx, oy+h-0.05, oz+lz_off), (w*0.7, 0.08, 0.4), C(255,250,220)))
+    # Baseboard trim along floor edges
+    ents += [
+        box((cx,  oy+0.35, oz+0.18), (w,   0.3, 0.12), C(min(wc.r*1.3,1), min(wc.g*1.3,1), min(wc.b*1.3,1))),
+        box((cx,  oy+0.35, oz+d-0.18),(w,  0.3, 0.12), C(min(wc.r*1.3,1), min(wc.g*1.3,1), min(wc.b*1.3,1))),
+        box((ox+0.18, oy+0.35, cz),(0.12, 0.3, d),     C(min(wc.r*1.3,1), min(wc.g*1.3,1), min(wc.b*1.3,1))),
+        box((ox+w-0.18,oy+0.35,cz),(0.12, 0.3, d),     C(min(wc.r*1.3,1), min(wc.g*1.3,1), min(wc.b*1.3,1))),
+    ]
     if group is not None:
         group.extend(ents)
     return ents
@@ -220,7 +232,28 @@ for px, pz in ((1,1),(23,1),(1,24),(23,24)):
         box((px, Y1+1.6, pz+0.3),(0.3,0.5,0.3),C(40,130,40)),
     ]
 
-# Ceiling lights floor 1 are added by make_room already
+# Lobby columns
+for cx_col in (4, 10, 16, 21):
+    floor1_entities += [
+        box((cx_col, Y1+3.0, 4),   (0.5, 6.0, 0.5), C(90,90,120), True),
+        box((cx_col, Y1+0.45, 4),  (0.7, 0.25, 0.7),C(110,110,140)),  # base
+        box((cx_col, Y1+5.85, 4),  (0.7, 0.25, 0.7),C(110,110,140)),  # capital
+    ]
+
+# Lobby tile floor pattern (checker-like strips)
+for tz in range(0, 26, 4):
+    floor1_entities.append(box((12, Y1+0.32, tz+1), (24, 0.03, 1.8), C(65,65,85)))
+
+# Staircase sign
+floor1_entities += [
+    box((46, Y1+4.0, 13), (2.5, 1.0, 0.1), C(50,50,80)),
+    box((46, Y1+4.0, 13), (2.0, 0.7, 0.08), PURPLE),
+]
+
+# Exit door glow frame (always visible, brightens at evening)
+floor1_entities += [
+    box((12, Y1+1.5, 0.3), (2.0, 2.8, 0.08), C(80,55,25)),   # door frame
+]
 
 # ── Cafeteria improvements (Change 6) ──────────────────
 # Cafeteria wall menu board
@@ -332,6 +365,19 @@ for dept, dept_ox in DEPT_OX.items():
         make_desk(dept_ox+lx, lz, group=floor2_entities)
     make_desk(dept_ox + EMPTY_DESK[0], EMPTY_DESK[1], empty=True, group=floor2_entities)
     make_manager_area(dept_ox, group=floor2_entities)
+
+# Floor 2 columns at dept boundaries
+for cx_col in (0, 14, 28, 42, 56):
+    for cz_col in (1, 13, 25):
+        floor2_entities += [
+            box((cx_col, Y2+3.0, cz_col),(0.5,6.0,0.5), C(75,80,100), True),
+            box((cx_col, Y2+0.5, cz_col),(0.7,0.3,0.7), C(90,95,120)),
+            box((cx_col, Y2+5.8, cz_col),(0.7,0.3,0.7), C(90,95,120)),
+        ]
+
+# Floor tile strips on floor 2
+for tz in range(0, 26, 4):
+    floor2_entities.append(box((28, Y2+0.34, tz+1),(56, 0.03, 1.8), C(50,52,68)))
 
 # ── Dept improvements (Change 7) ─────────────────────
 # Wall-mounted screens above each dept sign (large monitor look)
@@ -632,29 +678,57 @@ player.camera_pivot.y = 1.5
 # ════════════════════════════════════════════════════
 # HUD
 # ════════════════════════════════════════════════════
-hud_stats = Text(text='', position=(-0.85, 0.47), origin=(-0.5, 0.5),
-                 scale=1.3, color=Color(1,1,1,1), background=True)
-hud_clock = Text(text='', position=(0.85, 0.47), origin=(0.5, 0.5),
-                 scale=1.3, color=Color(1,1,1,1), background=True)
+# ── HUD Panels ───────────────────────────────────────
+_hud_bg_stats = Entity(parent=camera.ui, model='quad',
+                        scale=(.72,.065), position=(-.49,.455),
+                        color=C(10,8,20,210), z=0)
+_hud_bg_clock = Entity(parent=camera.ui, model='quad',
+                        scale=(.28,.065), position=(.72,.455),
+                        color=C(10,8,20,210), z=0)
+_hud_bg_floor = Entity(parent=camera.ui, model='quad',
+                        scale=(.18,.04), position=(-.81,.41),
+                        color=C(80,40,140,180), z=0)
+
+hud_stats = Text(text='', position=(-0.84, 0.47), origin=(-0.5, 0.5),
+                 scale=1.25, color=Color(1,1,1,1))
+hud_clock = Text(text='', position=(0.84, 0.47), origin=(0.5, 0.5),
+                 scale=1.25, color=Color(1,1,0.7,1))
 hud_hint  = Text(text='', position=(0, -0.38), origin=(0,0),
-                 scale=1.6, color=Color(1,1,1,1), background=True, visible=False)
+                 scale=1.6, color=Color(1,1,0.3,1), background=True, visible=False)
 hud_keys  = Text(text='WASD Move  |  Mouse Look  |  E Interact  |  Q Quit',
                  position=(0,-0.47), origin=(0,0), scale=1.1,
-                 color=Color(1,1,1,1), background=True)
-hud_floor = Text(text='', position=(-0.85, 0.38), origin=(-0.5, 0.5),
-                 scale=1.2, color=Color(1,1,1,1), background=True)
+                 color=Color(0.7,0.7,0.7,1), background=True)
+hud_floor = Text(text='', position=(-0.84, 0.41), origin=(-0.5, 0.5),
+                 scale=1.1, color=Color(180/255,100/255,255/255,1))
 
-# ── HUD improvements (Change 11) ─────────────────────
+# Stat bar entities (mood=pink, energy=green, money=gold, xp=blue)
+_bar_w = 0.055
+_bar_h = 0.012
+_bar_y = 0.442
+_bar_x0 = -0.83
+_bars = {}
+for bname, bx, bcol in [
+    ('mood',   _bar_x0+0.00, C(220,80,120)),
+    ('energy', _bar_x0+0.19, C(60,200,100)),
+]:
+    bg = Entity(parent=camera.ui, model='quad',
+                scale=(_bar_w, _bar_h), position=(bx+_bar_w/2, _bar_y),
+                color=C(30,30,30,180), z=0)
+    fill = Entity(parent=camera.ui, model='quad',
+                  scale=(_bar_w, _bar_h), position=(bx+_bar_w/2, _bar_y),
+                  color=bcol, z=-0.1)
+    _bars[bname] = (bx, fill, _bar_w)
+
 def update_hud():
     lvl   = stats['level']
     title = LEVEL_TITLES[lvl]
-    # ASCII bar helpers
-    def bar(val, mx=100, w=10):
-        filled = int(val/mx*w)
-        return '[' + '#'*filled + '-'*(w-filled) + ']'
-    hud_stats.text = (f"Mood {bar(stats['mood'])} {stats['mood']}   "
-                      f"Energy {bar(stats['energy'])} {stats['energy']}   "
-                      f"${stats['money']}   {stats['xp']}xp Lv{lvl} {title}")
+    # Update stat fill bars
+    for bname, (bx, fill, bw) in _bars.items():
+        val   = stats[bname] / 100
+        fill.scale_x = max(0.001, bw * val)
+        fill.x       = bx + (bw * val) / 2
+    hud_stats.text = (f"Mood {stats['mood']}   Energy {stats['energy']}   "
+                      f"${stats['money']}   {stats['xp']}xp  Lv{lvl} {title}")
     h = int(hour)
     m = int((hour - h) * 60)
     ampm = 'AM' if h < 12 else 'PM'
@@ -721,21 +795,33 @@ def open_dialogue(npc):
         friendship[npc['name']] = min(5, lvl + 1)
         stats['mood'] = min(100, stats['mood'] + 3)
 
+    dept_col = DEPT_COL.get(npc['dept'], PURPLE)
     rel_tag  = f"  {hearts(npc['name'])}" if npc['relationship'] else ''
     dialogue_panel = Entity(parent=camera.ui, model='quad',
-                            scale=(.75,.3), position=(0,-.15),
-                            color=Color(.04,.04,.1,.92), z=-1)
+                            scale=(.82,.36), position=(0,-.14),
+                            color=C(8,6,22,240), z=-1)
+    # Coloured dept stripe at top
+    Entity(parent=dialogue_panel, model='quad',
+           scale=(1, 0.1), position=(0, 0.46),
+           color=dept_col, z=-0.1)
     Text(parent=dialogue_panel,
-         text=f"{npc['name']}  ·  {npc['role']}  ·  {npc['dept']}{rel_tag}",
-         position=(0,.36), origin=(0,0), scale=2.0,
-         color=Color(180/255,100/255,255/255,1))
+         text=npc['name'], position=(0, .42), origin=(0,0),
+         scale=2.6, color=Color(1,1,1,1))
     Text(parent=dialogue_panel,
-         text=f'"{line}"', position=(0,.06), origin=(0,0),
-         scale=2.0, color=Color(1,1,1,1))
+         text=f"{npc['role']}  |  {npc['dept']}{rel_tag}",
+         position=(0, .30), origin=(0,0), scale=1.6,
+         color=Color(180/255,140/255,255/255,1))
+    # Divider line
+    Entity(parent=dialogue_panel, model='quad',
+           scale=(0.9, 0.008), position=(0, 0.22),
+           color=C(80,60,120,200), z=-0.1)
+    Text(parent=dialogue_panel,
+         text=f'"{line}"', position=(0, .04), origin=(0,0),
+         scale=2.1, color=Color(1,1,1,1))
     Text(parent=dialogue_panel,
          text='[ E ] Close',
-         position=(0,-.38), origin=(0,0),
-         scale=1.5, color=Color(.7,.7,.7,1))
+         position=(0, -.42), origin=(0,0),
+         scale=1.5, color=Color(.5,.5,.6,1))
 
 def close_dialogue():
     global dialogue_open, dialogue_panel
@@ -761,17 +847,27 @@ def pop_task():
     mouse.visible= True
 
     task_panel = Entity(parent=camera.ui, model='quad',
-                        scale=(.6,.22), position=(0,.1),
-                        color=C(10,30,20,230), z=-1)
+                        scale=(.65,.28), position=(0,.1),
+                        color=C(6,22,12,240), z=-1)
+    # Green top stripe
+    Entity(parent=task_panel, model='quad',
+           scale=(1, 0.1), position=(0, 0.46),
+           color=C(30,140,60,230), z=-0.1)
     Text(parent=task_panel,
-         text=f"Task: {current_task['text']}",
-         position=(0,.28), origin=(0,0), scale=1.9, color=Color(1,1,0.3,1))
+         text='NEW TASK', position=(0, .42), origin=(0,0),
+         scale=2.0, color=Color(0.4,1,0.5,1))
     Text(parent=task_panel,
-         text=f"Reward: +{current_task['xp']} XP   +${current_task['money']}",
-         position=(0,.02), origin=(0,0), scale=1.7, color=Color(0.6,1,0.6,1))
+         text=current_task['text'],
+         position=(0, .16), origin=(0,0), scale=2.0, color=Color(1,1,1,1))
+    Entity(parent=task_panel, model='quad',
+           scale=(0.85,0.008), position=(0,0.04),
+           color=C(40,100,50,200), z=-0.1)
     Text(parent=task_panel,
-         text='[ E ] Accept    [ X ] Skip',
-         position=(0,-.28), origin=(0,0), scale=1.6, color=Color(.8,.8,.8,1))
+         text=f"+{current_task['xp']} XP     +${current_task['money']}",
+         position=(0,-.1), origin=(0,0), scale=1.9, color=Color(0.5,1,0.4,1))
+    Text(parent=task_panel,
+         text='[ E ] Accept          [ X ] Skip',
+         position=(0,-.38), origin=(0,0), scale=1.55, color=Color(.7,.7,.7,1))
 
 def accept_task():
     global task_panel, task_active, current_task
@@ -1116,9 +1212,13 @@ def input(key):
 
         if near_stairs and game_state in ('work','evening'):
             if current_floor == 1:
-                player.position = Vec3(47, Y2+4, 13)   # Fix 1: higher landing on floor 2
+                player.position = Vec3(47, Y2+5, 13)
             else:
-                player.position = Vec3(47, Y1+1.5, 13)
+                player.position = Vec3(47, Y1+3, 13)
+            # Reset downward momentum so player doesn't clip through floor
+            for attr in ('y_velocity','velocity_y'):
+                if hasattr(player, attr):
+                    setattr(player, attr, 0)
             return
 
         if near_player_desk and game_state == 'work':
@@ -1177,37 +1277,58 @@ for n in npcs:
     n['label'].enabled = False
 
 cc_panel = Entity(parent=camera.ui, model='quad',
-                  scale=(.6,.55), color=Color(.04,.04,.1,.95), z=-1)
+                  scale=(.65,.68), color=C(8,6,22,248), z=-1)
+# Purple top bar
+Entity(parent=cc_panel, model='quad', scale=(1,.12),
+       position=(0,.46), color=PURPLE, z=-0.1)
 Text(parent=cc_panel, text='ODOO LIFE',
-     position=(0,.36), origin=(0,0), scale=4.5,
-     color=Color(114/255,46/255,209/255,1))
-Text(parent=cc_panel, text='Create your character',
-     position=(0,.22), origin=(0,0), scale=2.0,
-     color=Color(.8,.8,.8,1))
-Text(parent=cc_panel, text='Name:',
-     position=(-.22,.08), origin=(0,0), scale=1.8,
+     position=(0,.46), origin=(0,0), scale=5.0,
      color=Color(1,1,1,1))
-name_field = InputField(parent=cc_panel, position=(0.06,.08),
-                        scale=(.3,.045), default_value='YourName')
-Text(parent=cc_panel, text='Department:',
-     position=(0,-.06), origin=(0,0), scale=1.8,
-     color=Color(1,1,1,1))
+Text(parent=cc_panel, text='Your Odoo career starts here',
+     position=(0,.34), origin=(0,0), scale=1.8,
+     color=Color(180/255,140/255,255/255,1))
 
+# Divider
+Entity(parent=cc_panel, model='quad', scale=(0.88,.006),
+       position=(0,.27), color=C(80,50,140,200), z=-0.1)
+
+Text(parent=cc_panel, text='Your Name',
+     position=(-.3,.18), origin=(0,0), scale=1.7,
+     color=Color(.7,.7,.8,1))
+name_field = InputField(parent=cc_panel, position=(0.08,.18),
+                        scale=(.34,.048), default_value='YourName')
+
+Text(parent=cc_panel, text='Choose Your Department',
+     position=(0,.05), origin=(0,0), scale=1.75,
+     color=Color(.7,.7,.8,1))
+
+DEPT_DESC = {
+    'Sales': 'Close deals & grow revenue',
+    'BSA':   'Analyse & document processes',
+    'FSS':   'Support & configure Odoo',
+}
 selected_dept = ['Sales']
 dept_btns     = []
+dept_desc_txt = Text(parent=cc_panel,
+                     text=DEPT_DESC['Sales'],
+                     position=(0,-.18), origin=(0,0), scale=1.5,
+                     color=Color(.6,.8,.6,1))
 
 def select_dept(d):
     selected_dept[0] = d
+    dept_desc_txt.text = DEPT_DESC[d]
     for b, bd in dept_btns:
-        b.color = PURPLE if bd == d else C(50,50,70)
+        b.color          = DEPT_COL[bd]
+        b.text_color     = Color(1,1,1,1) if bd == d else Color(.6,.6,.6,1)
+        b.scale_y        = .065 if bd == d else .055
 
 for i, d in enumerate(('Sales','BSA','FSS')):
-    xi = -0.18 + i * 0.18
+    xi = -0.20 + i * 0.20
     b  = Button(parent=cc_panel, text=d,
-                position=(xi, -.15), scale=(.14,.05),
-                color=PURPLE if i==0 else C(50,50,70),
+                position=(xi, -.07), scale=(.16,.055),
+                color=DEPT_COL[d] if i==0 else C(50,50,70),
                 highlight_color=C(140,80,230),
-                text_color=Color(1,1,1,1))
+                text_color=Color(1,1,1,1) if i==0 else Color(.6,.6,.6,1))
     b.on_click = lambda dept=d: select_dept(dept)
     dept_btns.append((b, d))
 
@@ -1224,8 +1345,8 @@ def start_game():
     mouse.visible = False
     update_hud()
 
-start_btn = Button(parent=cc_panel, text='Start Game',
-                   position=(0,-.3), scale=(.26,.06),
+start_btn = Button(parent=cc_panel, text='Start Game  ->',
+                   position=(0,-.35), scale=(.30,.07),
                    color=PURPLE, highlight_color=C(140,80,230),
                    text_color=Color(1,1,1,1))
 start_btn.on_click = start_game
